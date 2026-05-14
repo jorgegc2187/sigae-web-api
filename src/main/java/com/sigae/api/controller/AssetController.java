@@ -1,12 +1,14 @@
 package com.sigae.api.controller;
 
 import com.sigae.api.model.dto.AssetRequest;
+import com.sigae.api.model.dto.AssetInventoryGroupResponse;
 import com.sigae.api.model.dto.AssetResponse;
 import com.sigae.api.model.dto.AssetTraceabilityResponse;
 import com.sigae.api.service.AssetService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,6 +33,19 @@ public class AssetController {
   @GetMapping
   public List<AssetResponse> list() {
     return assetService.findAll().stream().map(AssetResponse::from).toList();
+  }
+
+  @GetMapping("/grouped")
+  public List<AssetInventoryGroupResponse> listGrouped(
+      @RequestParam(required = false) String search,
+      @RequestParam(required = false) UUID categoryId
+  ) {
+    return assetService.findGrouped(search, categoryId);
+  }
+
+  @GetMapping("/grouped/{groupId}")
+  public AssetInventoryGroupResponse getGroupedById(@PathVariable String groupId) {
+    return assetService.findGroupedById(groupId);
   }
 
   @GetMapping("/{assetId}")

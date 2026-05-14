@@ -3,6 +3,8 @@ package com.sigae.api.service;
 import com.sigae.api.exception.ConflictException;
 import com.sigae.api.exception.NotFoundException;
 import com.sigae.api.model.dto.AssetAttributeValueRequest;
+import com.sigae.api.model.dto.AssetInventoryGroupResponse;
+import com.sigae.api.model.dto.AssetInventoryGroupUnitResponse;
 import com.sigae.api.model.dto.AssetRequest;
 import com.sigae.api.model.entity.Asset;
 import com.sigae.api.model.entity.AssetAttributeDefinition;
@@ -19,6 +21,9 @@ import com.sigae.api.repository.AssetTypeRepository;
 import com.sigae.api.repository.LocationRepository;
 import com.sigae.api.repository.SupplierRepository;
 import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.util.Comparator;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -52,6 +57,17 @@ public class AssetService {
 
   public List<Asset> findAll() {
     return assetRepository.findAll();
+  }
+
+  public List<AssetInventoryGroupResponse> findGrouped(String search, UUID categoryId) {
+    return buildGroupedResponses(search, categoryId);
+  }
+
+  public AssetInventoryGroupResponse findGroupedById(String groupId) {
+    return buildGroupedResponses(null, null).stream()
+        .filter(group -> group.groupId().equals(groupId))
+        .findFirst()
+        .orElseThrow(() -> new NotFoundException("Familia de activos no encontrada."));
   }
 
   public Asset getById(UUID id) {
@@ -227,4 +243,77 @@ public class AssetService {
   private String normalizeOptional(String value) {
     return value == null || value.isBlank() ? null : value.trim();
   }
+
+  private String normalizeSearch(String value) {
+    return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private List<AssetInventoryGroupResponse> buildGroupedResponses(String search, UUID categoryId) {
+    String normalizedSearch = normalizeSearch(search);
+
+    Map<AssetGroupKey, List<Asset>> groupedAssets = assetRepository.findAll().stream()
+        .filter(asset -> categoryId == null || asset.getAssetType().getCategory().getId().equals(categoryId))
+        .filter(asset -> matchesGroupedSearch(asset, normalizedSearch))
+        .collect(Collectors.groupingBy(asset -> new AssetGroupKey(
+            buildGroupId(asset),
+            asset.getName().trim(),
+            asset.getAssetType().getCategory().getId(),
+            asset.getAssetType().getCategory().getIcon(),
+            asset.getAssetType().getCategory().getName()
+        )));
+
+    return groupedAssets.entrySet().stream()
+        .map(entry -> new AssetInventoryGroupResponse(
+            entry.getKey().groupId(),
+            entry.getKey().displayName(),
+            entry.getKey().categoryId(),
+            entry.getKey().categoryIcon(),
+            entry.getKey().categoryName(),
+            entry.getValue().size(),
+            entry.getValue().stream()
+                .map(Asset::getCreatedAt)
+                .max(Comparator.naturalOrder())
+                .orElse(null),
+            entry.getValue().stream()
+                .sorted(Comparator.comparing(Asset::getCode, String.CASE_INSENSITIVE_ORDER))
+                .map(AssetInventoryGroupUnitResponse::from)
+                .toList()
+        ))
+        .sorted(Comparator.comparing(AssetInventoryGroupResponse::displayName, String.CASE_INSENSITIVE_ORDER))
+        .toList();
+  }
+
+  private boolean matchesGroupedSearch(Asset asset, String normalizedSearch) {
+    if (normalizedSearch.isBlank()) {
+      return true;
+    }
+
+    return List.of(
+            asset.getName(),
+            asset.getCode(),
+            asset.getSerialNumber(),
+            asset.getLocation().getName(),
+            asset.getAssetType().getName(),
+            asset.getAssetType().getCategory().getName()
+        ).stream()
+        .filter(value -> value != null && !value.isBlank())
+        .map(value -> value.toLowerCase(Locale.ROOT))
+        .anyMatch(value -> value.contains(normalizedSearch));
+  }
+
+  private String buildGroupId(Asset asset) {
+    String seed = "%s|%s".formatted(
+        asset.getAssetType().getId(),
+        asset.getName().trim().toLowerCase(Locale.ROOT)
+    );
+    return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
+  }
+
+  private record AssetGroupKey(
+      String groupId,
+      String displayName,
+      UUID categoryId,
+      String categoryIcon,
+      String categoryName
+  ) {}
 }
