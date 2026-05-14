@@ -33,7 +33,11 @@ public class CategoryService {
   }
 
   public List<Category> findAll() {
-    return categoryRepository.findAll();
+    List<Category> categories = categoryRepository.findAll();
+    categories.forEach(category ->
+        category.getTypes().forEach(type -> type.getAttributes().size())
+    );
+    return categories;
   }
 
   @Transactional
@@ -64,8 +68,7 @@ public class CategoryService {
     AssetType assetType = new AssetType(request.name().trim(), request.icon().trim());
     assetType.replaceAttributes(request.attributes().stream().map(this::toAttributeEntity).toList());
     category.addType(assetType);
-    categoryRepository.save(category);
-    return assetType;
+    return assetTypeRepository.save(assetType);
   }
 
   @Transactional

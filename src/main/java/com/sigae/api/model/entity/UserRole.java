@@ -6,8 +6,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 public enum UserRole {
   ADMINISTRADOR("Administrador"),
   ENCARGADO("Encargado"),
-  DIRECTOR("Director"),
-  SUBDIRECTOR("Subdirector");
+  SOLO_LECTURA("Solo Lectura");
 
   private final String label;
 

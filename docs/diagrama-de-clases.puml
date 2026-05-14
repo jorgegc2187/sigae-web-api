@@ -1,0 +1,304 @@
+' ----------------------------------------------------------------
+' SIGAE - Diagrama de clases actual + roadmap
+' ----------------------------------------------------------------
+@startuml sigae-class-diagram
+!theme plain
+skinparam backgroundColor #F8FAFC
+skinparam classBackgroundColor white
+skinparam classBorderColor #1D4ED8
+skinparam classFontStyle bold
+skinparam classHeaderBackgroundColor #1D4ED8
+skinparam classHeaderFontColor white
+skinparam enumBackgroundColor white
+skinparam enumBorderColor #64748B
+skinparam arrowColor #475569
+skinparam arrowFontSize 10
+skinparam linetype ortho
+skinparam padding 5
+
+title SIGAE - Diagrama de Clases Actual y Futuro
+
+legend right
+  |= Estereotipo |= Significado |
+  | <<actual>> | Implementado en API/migración actual |
+  | <<planned>> | Previsto para siguientes módulos |
+  | <<append-only>> | Registro histórico no editable |
+endlegend
+
+' ----------------------------------------------------------------
+' Base compartida
+' ----------------------------------------------------------------
+abstract class BaseEntity <<actual>> {
+  + id : UUID <<PK>>
+  + createdAt : Instant
+  + updatedAt : Instant
+}
+
+' ----------------------------------------------------------------
+' Auth + Usuarios (actual)
+' ----------------------------------------------------------------
+class User <<actual>> {
+  + fullName : VARCHAR(160)
+  + email : VARCHAR(320) <<unique>>
+  + passwordHash : VARCHAR(255)
+  + role : UserRole
+  + status : UserStatus
+  + lastAccessAt : Instant
+}
+
+enum UserRole <<actual>> {
+  ADMINISTRADOR
+  ENCARGADO
+  SOLO_LECTURA
+}
+
+enum UserStatus <<actual>> {
+  ACTIVE
+  INACTIVE
+}
+
+class RefreshToken <<actual>> {
+  + userId : UUID <<FK>>
+  + tokenHash : VARCHAR(128) <<unique>>
+  + expiresAt : Instant
+  + revokedAt : Instant?
+  --
+  + isActive() : boolean
+  + revoke() : void
+}
+
+class PasswordResetRequest <<actual>> {
+  + userId : UUID <<FK>>
+  + tokenHash : VARCHAR(128)
+  + expiresAt : Instant
+  + usedAt : Instant?
+  --
+  + markUsed() : void
+}
+
+' ----------------------------------------------------------------
+' Categorías y tipos de activo (actual)
+' ----------------------------------------------------------------
+class Category <<actual>> {
+  + name : VARCHAR(120) <<unique>>
+  + icon : VARCHAR(80)
+  --
+  + addType(type : AssetType) : void
+}
+
+class AssetType <<actual>> {
+  + categoryId : UUID <<FK>>
+  + name : VARCHAR(120)
+  + icon : VARCHAR(80)
+  --
+  + replaceAttributes(attributes : List<AssetAttributeDefinition>) : void
+}
+
+class AssetAttributeDefinition <<actual>> {
+  + assetTypeId : UUID <<FK>>
+  + name : VARCHAR(120)
+  + description : VARCHAR(255)
+  + isRequired : BOOLEAN
+}
+
+' ----------------------------------------------------------------
+' Catálogos operativos e inventario (actual)
+' ----------------------------------------------------------------
+enum CatalogStatus <<actual>> {
+  ACTIVE
+  INACTIVE
+}
+
+class Location <<actual>> {
+  + name : VARCHAR(150)
+  + description : TEXT
+  + status : CatalogStatus
+}
+
+class Supplier <<actual>> {
+  + name : VARCHAR(150)
+  + ruc : VARCHAR(11)?
+  + email : VARCHAR(150)?
+  + phone : VARCHAR(20)?
+  + address : TEXT?
+  + status : CatalogStatus
+}
+
+class Teacher <<actual>> {
+  + dni : VARCHAR(8) <<unique>>
+  + fullName : VARCHAR(160)
+  + specialty : VARCHAR(120)?
+  + email : VARCHAR(150)?
+  + phone : VARCHAR(20)?
+  + status : CatalogStatus
+}
+
+class Asset <<actual>> {
+  + code : VARCHAR(30) <<unique>>
+  + name : VARCHAR(160)
+  + assetTypeId : UUID <<FK>>
+  + locationId : UUID <<FK>>
+  + supplierId : UUID? <<FK>>
+  + condition : AssetCondition
+  + serialNumber : VARCHAR(100)?
+  + barcode : VARCHAR(100)? <<unique>>
+  + acquisitionDate : DATE?
+  + notes : TEXT?
+}
+
+enum AssetCondition <<actual>> {
+  BUENO
+  REGULAR
+  MALO
+  MANTENIMIENTO
+  DADO_DE_BAJA
+}
+
+class AssetAttributeValue <<actual>> {
+  + assetId : UUID <<FK>>
+  + attributeDefinitionId : UUID <<FK>>
+  + attributeValue : TEXT
+}
+
+' ----------------------------------------------------------------
+' Auditoría de inventario (actual)
+' ----------------------------------------------------------------
+class AssetTraceability <<actual, append-only>> {
+  + assetId : UUID <<FK>>
+  + eventType : TraceabilityEventType
+  + description : TEXT
+  + previousValue : TEXT?
+  + newValue : TEXT?
+  + reason : TEXT?
+  + userId : UUID? <<FK>>
+  + occurredAt : Instant
+}
+
+enum TraceabilityEventType <<actual>> {
+  CREATED
+  UPDATED
+  CONDITION_CHANGED
+  LOCATION_CHANGED
+  DECOMMISSIONED
+}
+
+' ----------------------------------------------------------------
+' Permisos por ubicación (planned)
+' ----------------------------------------------------------------
+class UserLocation <<planned>> {
+  + userId : UUID <<PK, FK>>
+  + locationId : UUID <<PK, FK>>
+  + assignedAt : Instant
+}
+
+note right of UserLocation
+  Base futura para autorización por ubicación:
+  - ENCARGADO opera activos de sus ubicaciones
+  - ENCARGADO ve sus propios préstamos
+  - SOLO_LECTURA consulta activos/préstamos de sus ubicaciones
+end note
+
+' ----------------------------------------------------------------
+' Préstamos (planned)
+' ----------------------------------------------------------------
+class Loan <<planned>> {
+  + code : VARCHAR(30) <<unique>>
+  + teacherId : UUID <<FK>>
+  + destinationId : UUID? <<FK>>
+  + status : LoanStatus
+  + startDate : DATE
+  + dueDate : DATE
+  + returnedAt : Instant?
+  + notes : TEXT?
+  + returnNotes : TEXT?
+  --
+  + registerReturn(notes : String) : void
+}
+
+enum LoanStatus <<planned>> {
+  ACTIVO
+  VENCIDO
+  DEVUELTO
+}
+
+class LoanAsset <<planned>> {
+  + loanId : UUID <<PK, FK>>
+  + assetId : UUID <<PK, FK>>
+  + loanStatus : LoanAssetStatus
+  + returnCondition : AssetCondition?
+  + returnNotes : TEXT?
+}
+
+enum LoanAssetStatus <<planned>> {
+  OPERATIVO
+  REGULAR
+  EN_PRESTAMO
+}
+
+class LoanActivity <<planned>> {
+  + loanId : UUID <<FK>>
+  + title : VARCHAR(120)
+  + description : TEXT
+  + actorName : VARCHAR(160)
+  + occurredAt : Instant
+}
+
+' ----------------------------------------------------------------
+' Herencia de entidades persistentes
+' ----------------------------------------------------------------
+BaseEntity <|-- User
+BaseEntity <|-- RefreshToken
+BaseEntity <|-- PasswordResetRequest
+BaseEntity <|-- Category
+BaseEntity <|-- AssetType
+BaseEntity <|-- AssetAttributeDefinition
+BaseEntity <|-- Location
+BaseEntity <|-- Supplier
+BaseEntity <|-- Teacher
+BaseEntity <|-- Asset
+BaseEntity <|-- AssetAttributeValue
+BaseEntity <|-- AssetTraceability
+BaseEntity <|-- Loan
+BaseEntity <|-- LoanActivity
+
+' ----------------------------------------------------------------
+' Relaciones actuales
+' ----------------------------------------------------------------
+UserRole       "1" <-- "N" User                 : rol
+UserStatus     "1" <-- "N" User                 : estado
+User           "1" --o{ "N" RefreshToken        : sesiones
+User           "1" --o{ "N" PasswordResetRequest: recuperación
+
+Category       "1" --o{ "N" AssetType           : contiene
+AssetType      "1" --o{ "N" AssetAttributeDefinition : define
+
+CatalogStatus  "1" <-- "N" Location             : estado
+CatalogStatus  "1" <-- "N" Supplier             : estado
+CatalogStatus  "1" <-- "N" Teacher              : estado
+
+AssetType      "1" --o{ "N" Asset               : clasifica
+Location       "1" --o{ "N" Asset               : alberga
+Supplier       "0..1" --o{ "N" Asset            : provee
+AssetCondition "1" <-- "N" Asset                : condición
+Asset          "1" --o{ "N" AssetAttributeValue : valores
+AssetAttributeDefinition "1" --o{ "N" AssetAttributeValue : atributo
+
+Asset          "1" --o{ "N" AssetTraceability   : historial
+User           "0..1" --o{ "N" AssetTraceability: registra
+TraceabilityEventType "1" <-- "N" AssetTraceability : tipo
+
+' ----------------------------------------------------------------
+' Relaciones planificadas
+' ----------------------------------------------------------------
+User           "1" --o{ "N" UserLocation        : permisos
+Location       "1" --o{ "N" UserLocation        : asignaciones
+
+Teacher        "1" --o{ "N" Loan                : recibe
+Location       "0..1" --o{ "N" Loan             : destino
+LoanStatus     "1" <-- "N" Loan                 : estado
+Loan           "1" --o{ "N" LoanAsset           : contiene
+Asset          "1" --o{ "N" LoanAsset           : incluido
+LoanAssetStatus "1" <-- "N" LoanAsset           : estado préstamo
+Loan           "1" --o{ "N" LoanActivity        : actividad
+
+@enduml
