@@ -70,6 +70,7 @@ public class SecurityConfig {
     configuration.setAllowedOrigins(securityProperties.cors().allowedOrigins());
     configuration.setAllowedMethods(List.of("GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"));
     configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+    configuration.setExposedHeaders(List.of("Content-Disposition"));
     configuration.setAllowCredentials(true);
     configuration.setMaxAge(3600L);
 

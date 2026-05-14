@@ -31,6 +31,8 @@
 		<h2.version>2.3.232</h2.version>
 		<jjwt.version>0.12.6</jjwt.version>
 		<mockito.version>5.20.0</mockito.version>
+		<openpdf.version>2.0.3</openpdf.version>
+		<poi.version>5.4.1</poi.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -61,6 +63,16 @@
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt-api</artifactId>
 			<version>${jjwt.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.github.librepdf</groupId>
+			<artifactId>openpdf</artifactId>
+			<version>${openpdf.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi-ooxml</artifactId>
+			<version>${poi.version}</version>
 		</dependency>
 
 		<dependency>

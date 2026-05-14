@@ -45,6 +45,12 @@ public class GlobalExceptionHandler {
         .body(ApiError.of(409, "Conflict", exception.getMessage(), request.getRequestURI()));
   }
 
+  @ExceptionHandler(BadRequestException.class)
+  ResponseEntity<ApiError> handleBadRequest(BadRequestException exception, HttpServletRequest request) {
+    return ResponseEntity.badRequest()
+        .body(ApiError.of(400, "Bad Request", exception.getMessage(), request.getRequestURI()));
+  }
+
   @ExceptionHandler(BadCredentialsException.class)
   ResponseEntity<ApiError> handleBadCredentials(
       BadCredentialsException exception,
