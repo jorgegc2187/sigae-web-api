@@ -1,0 +1,31 @@
+name: sigae
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: sigae-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sigae}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      TZ: America/Lima
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - sigae_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - sigae_backend
+
+volumes:
+  sigae_postgres_data:
+
+networks:
+  sigae_backend:
+    driver: bridge

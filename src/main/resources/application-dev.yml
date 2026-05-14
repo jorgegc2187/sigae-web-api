@@ -21,3 +21,7 @@ app:
       full-name: ${BOOTSTRAP_ADMIN_FULL_NAME:Administrador SIGAE}
       email: ${BOOTSTRAP_ADMIN_EMAIL:admin@sigae.edu.pe}
       password: ${BOOTSTRAP_ADMIN_PASSWORD:admin123456}
+  dev-seed:
+    enabled: ${DEV_SEED_ENABLED:false}
+server:
+  port: 9301
