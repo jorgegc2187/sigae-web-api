@@ -10,7 +10,6 @@ import com.sigae.api.exception.NotFoundException;
 import com.sigae.api.model.entity.RefreshToken;
 import com.sigae.api.model.entity.User;
 import com.sigae.api.model.entity.UserStatus;
-import com.sigae.api.repository.PasswordResetRequestRepository;
 import com.sigae.api.repository.RefreshTokenRepository;
 import com.sigae.api.security.AuthenticatedUser;
 import com.sigae.api.security.JwtService;
@@ -29,29 +28,29 @@ public class AuthService {
   private final PasswordEncoder passwordEncoder;
   private final JwtService jwtService;
   private final RefreshTokenRepository refreshTokenRepository;
-  private final PasswordResetRequestRepository passwordResetRequestRepository;
   private final OpaqueTokenService opaqueTokenService;
-  private final TokenHashingService tokenHashingService;
+  private final PasswordSetupTokenService passwordSetupTokenService;
   private final PasswordResetMailService passwordResetMailService;
+  private final TokenHashingService tokenHashingService;
 
   public AuthService(
       UserService userService,
       PasswordEncoder passwordEncoder,
       JwtService jwtService,
       RefreshTokenRepository refreshTokenRepository,
-      PasswordResetRequestRepository passwordResetRequestRepository,
       OpaqueTokenService opaqueTokenService,
-      TokenHashingService tokenHashingService,
-      PasswordResetMailService passwordResetMailService
+      PasswordSetupTokenService passwordSetupTokenService,
+      PasswordResetMailService passwordResetMailService,
+      TokenHashingService tokenHashingService
   ) {
     this.userService = userService;
     this.passwordEncoder = passwordEncoder;
     this.jwtService = jwtService;
     this.refreshTokenRepository = refreshTokenRepository;
-    this.passwordResetRequestRepository = passwordResetRequestRepository;
     this.opaqueTokenService = opaqueTokenService;
-    this.tokenHashingService = tokenHashingService;
+    this.passwordSetupTokenService = passwordSetupTokenService;
     this.passwordResetMailService = passwordResetMailService;
+    this.tokenHashingService = tokenHashingService;
   }
 
   @Transactional
@@ -101,14 +100,7 @@ public class AuthService {
   @Transactional
   public void requestPasswordReset(ForgotPasswordRequest request) {
     userService.findByEmail(request.email()).ifPresent(user -> {
-      String rawToken = opaqueTokenService.generate();
-      invalidateActivePasswordResetRequests(user.getId());
-      PasswordResetRequest resetRequest = new PasswordResetRequest(
-          user,
-          tokenHashingService.sha256(rawToken),
-          Instant.now().plus(jwtService.properties().passwordResetTokenTtl())
-      );
-      passwordResetRequestRepository.save(resetRequest);
+      String rawToken = passwordSetupTokenService.issueToken(user);
       passwordResetMailService.sendPasswordResetMail(user, rawToken);
     });
   }
@@ -121,14 +113,7 @@ public class AuthService {
 
     validatePasswordPolicy(request.newPassword());
 
-    PasswordResetRequest resetRequest = passwordResetRequestRepository
-        .findByTokenHash(tokenHashingService.sha256(request.token()))
-        .orElseThrow(() -> new BadRequestException("El enlace de recuperación es inválido o ya expiró."));
-
-    if (!resetRequest.isActive()) {
-      throw new BadRequestException("El enlace de recuperación es inválido o ya expiró.");
-    }
-
+    PasswordResetRequest resetRequest = passwordSetupTokenService.consumeValidToken(request.token());
     User user = resetRequest.getUser();
     user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
     resetRequest.markUsed();
@@ -161,16 +146,6 @@ public class AuthService {
         jwtService.getAccessTokenExpiresInSeconds(),
         AuthUserResponse.from(user)
     );
-  }
-
-  private void invalidateActivePasswordResetRequests(java.util.UUID userId) {
-    List<PasswordResetRequest> requests = passwordResetRequestRepository.findAllByUser_IdAndUsedAtIsNull(userId);
-    if (requests.isEmpty()) {
-      return;
-    }
-
-    requests.forEach(PasswordResetRequest::markUsed);
-    passwordResetRequestRepository.saveAll(requests);
   }
 
   private void revokeAllRefreshTokens(java.util.UUID userId) {

@@ -1,6 +1,7 @@
 package com.sigae.api.service;
 
 import com.sigae.api.exception.ConflictException;
+import com.sigae.api.exception.BadRequestException;
 import com.sigae.api.exception.NotFoundException;
 import com.sigae.api.model.dto.CreateUserRequest;
 import com.sigae.api.model.dto.UpdateUserRequest;
@@ -23,25 +24,42 @@ public class UserService {
 
   private final UserRepository userRepository;
   private final PasswordEncoder passwordEncoder;
+  private final PasswordSetupTokenService passwordSetupTokenService;
+  private final UserInvitationMailService userInvitationMailService;
 
-  public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+  public UserService(
+      UserRepository userRepository,
+      PasswordEncoder passwordEncoder,
+      PasswordSetupTokenService passwordSetupTokenService,
+      UserInvitationMailService userInvitationMailService
+  ) {
     this.userRepository = userRepository;
     this.passwordEncoder = passwordEncoder;
+    this.passwordSetupTokenService = passwordSetupTokenService;
+    this.userInvitationMailService = userInvitationMailService;
   }
 
   @Transactional
   public User create(CreateUserRequest request) {
     String normalizedEmail = normalizeEmail(request.email());
     ensureEmailAvailable(normalizedEmail, null);
+    String passwordHash = passwordEncoder.encode(resolveInitialPassword(request));
 
     User user = new User(
         request.fullName().trim(),
         normalizedEmail,
-        passwordEncoder.encode(request.password()),
+        passwordHash,
         request.role(),
         request.status()
     );
-    return userRepository.save(user);
+    User createdUser = userRepository.save(user);
+
+    if (request.shouldSendInvitation()) {
+      String rawToken = passwordSetupTokenService.issueToken(createdUser);
+      userInvitationMailService.sendInvitationMail(createdUser, rawToken);
+    }
+
+    return createdUser;
   }
 
   @Transactional
@@ -115,5 +133,17 @@ public class UserService {
 
   private String normalizeEmail(String email) {
     return email.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private String resolveInitialPassword(CreateUserRequest request) {
+    if (request.shouldSendInvitation()) {
+      return "SIGAE-" + java.util.UUID.randomUUID();
+    }
+
+    if (request.password() == null || request.password().isBlank()) {
+      throw new BadRequestException("La contraseña es obligatoria cuando no se envía invitación.");
+    }
+
+    return request.password();
   }
 }

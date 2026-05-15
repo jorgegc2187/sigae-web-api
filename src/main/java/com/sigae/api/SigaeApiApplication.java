@@ -1,5 +1,7 @@
 package com.sigae.api;
 
+import com.sigae.api.config.DotenvPropertiesLoader;
+import java.nio.file.Path;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
@@ -12,7 +14,11 @@ import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 public class SigaeApiApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(SigaeApiApplication.class, args);
+		SpringApplication application = new SpringApplication(SigaeApiApplication.class);
+		application.setDefaultProperties(
+				DotenvPropertiesLoader.loadDefaultProperties(Path.of(".env"))
+		);
+		application.run(args);
 	}
 
 }

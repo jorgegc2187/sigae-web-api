@@ -10,7 +10,12 @@ import jakarta.validation.constraints.Size;
 public record CreateUserRequest(
     @NotBlank @Size(max = 160) String fullName,
     @NotBlank @Email @Size(max = 320) String email,
-    @NotBlank @Size(min = 8, max = 120) String password,
+    @Size(min = 8, max = 120) String password,
     @NotNull UserRole role,
-    @NotNull UserStatus status
-) {}
+    @NotNull UserStatus status,
+    Boolean sendInvitation
+) {
+  public boolean shouldSendInvitation() {
+    return Boolean.TRUE.equals(sendInvitation);
+  }
+}

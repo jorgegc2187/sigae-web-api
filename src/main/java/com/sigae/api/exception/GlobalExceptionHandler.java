@@ -51,6 +51,20 @@ public class GlobalExceptionHandler {
         .body(ApiError.of(400, "Bad Request", exception.getMessage(), request.getRequestURI()));
   }
 
+  @ExceptionHandler(MailDeliveryException.class)
+  ResponseEntity<ApiError> handleMailDelivery(
+      MailDeliveryException exception,
+      HttpServletRequest request
+  ) {
+    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+        .body(ApiError.of(
+            503,
+            "Service Unavailable",
+            exception.getMessage(),
+            request.getRequestURI()
+        ));
+  }
+
   @ExceptionHandler(BadCredentialsException.class)
   ResponseEntity<ApiError> handleBadCredentials(
       BadCredentialsException exception,
