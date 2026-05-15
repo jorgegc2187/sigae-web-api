@@ -33,6 +33,34 @@ public class PasswordResetRequest extends BaseEntity {
     this.expiresAt = expiresAt;
   }
 
+  public User getUser() {
+    return user;
+  }
+
+  public String getTokenHash() {
+    return tokenHash;
+  }
+
+  public Instant getExpiresAt() {
+    return expiresAt;
+  }
+
+  public Instant getUsedAt() {
+    return usedAt;
+  }
+
+  public boolean isUsed() {
+    return usedAt != null;
+  }
+
+  public boolean isExpired() {
+    return expiresAt.isBefore(Instant.now());
+  }
+
+  public boolean isActive() {
+    return !isUsed() && !isExpired();
+  }
+
   public void markUsed() {
     usedAt = Instant.now();
   }

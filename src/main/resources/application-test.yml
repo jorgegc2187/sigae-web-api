@@ -11,6 +11,11 @@ spring:
     enabled: true
 
 app:
+  auth:
+    recovery:
+      mail-enabled: false
+      frontend-url: http://localhost:4200
+      mail-from: no-reply@sigae.test
   security:
     jwt:
       issuer: sigae-api-test

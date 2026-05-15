@@ -49,7 +49,8 @@ public class SecurityConfig {
                 "/actuator/health",
                 "/api/auth/login",
                 "/api/auth/refresh",
-                "/api/auth/forgot-password"
+                "/api/auth/forgot-password",
+                "/api/auth/reset-password"
             ).permitAll()
             .anyRequest().authenticated())
         .httpBasic(AbstractHttpConfigurer::disable)

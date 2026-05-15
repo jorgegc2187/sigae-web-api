@@ -11,6 +11,7 @@ import com.sigae.api.repository.UserRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -92,6 +93,10 @@ public class UserService {
   public User getByEmailOrThrow(String email) {
     return userRepository.findByEmailIgnoreCase(normalizeEmail(email))
         .orElseThrow(() -> new NotFoundException("Usuario no encontrado."));
+  }
+
+  public Optional<User> findByEmail(String email) {
+    return userRepository.findByEmailIgnoreCase(normalizeEmail(email));
   }
 
   public User findActiveByEmail(String email) {

@@ -18,6 +18,18 @@ spring:
   mvc:
     problemdetails:
       enabled: true
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:false}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS_ENABLE:false}
+            required: ${MAIL_SMTP_STARTTLS_REQUIRED:false}
 
 management:
   endpoints:
@@ -38,3 +50,8 @@ app:
   bootstrap:
     admin:
       enabled: false
+  auth:
+    recovery:
+      mail-enabled: ${MAIL_ENABLED:true}
+      frontend-url: ${APP_FRONTEND_URL:http://localhost:4200}
+      mail-from: ${MAIL_FROM:no-reply@sigae.local}

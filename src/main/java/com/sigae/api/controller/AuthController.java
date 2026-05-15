@@ -7,6 +7,7 @@ import com.sigae.api.model.dto.ForgotPasswordResponse;
 import com.sigae.api.model.dto.LoginRequest;
 import com.sigae.api.model.dto.LogoutRequest;
 import com.sigae.api.model.dto.RefreshTokenRequest;
+import com.sigae.api.model.dto.ResetPasswordRequest;
 import com.sigae.api.service.AuthService;
 import com.sigae.api.security.AuthenticatedUser;
 import jakarta.validation.Valid;
@@ -56,5 +57,11 @@ public class AuthController {
     return new ForgotPasswordResponse(
         "Si el correo está registrado, recibirás instrucciones de recuperación en los próximos minutos."
     );
+  }
+
+  @PostMapping("/reset-password")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+    authService.resetPassword(request);
   }
 }

@@ -3,6 +3,8 @@ package com.sigae.api.service;
 import com.sigae.api.model.dto.AuthResponse;
 import com.sigae.api.model.dto.AuthUserResponse;
 import com.sigae.api.model.dto.ForgotPasswordRequest;
+import com.sigae.api.model.dto.ResetPasswordRequest;
+import com.sigae.api.exception.BadRequestException;
 import com.sigae.api.model.entity.PasswordResetRequest;
 import com.sigae.api.exception.NotFoundException;
 import com.sigae.api.model.entity.RefreshToken;
@@ -13,6 +15,7 @@ import com.sigae.api.repository.RefreshTokenRepository;
 import com.sigae.api.security.AuthenticatedUser;
 import com.sigae.api.security.JwtService;
 import java.time.Instant;
+import java.util.List;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -29,6 +32,7 @@ public class AuthService {
   private final PasswordResetRequestRepository passwordResetRequestRepository;
   private final OpaqueTokenService opaqueTokenService;
   private final TokenHashingService tokenHashingService;
+  private final PasswordResetMailService passwordResetMailService;
 
   public AuthService(
       UserService userService,
@@ -37,7 +41,8 @@ public class AuthService {
       RefreshTokenRepository refreshTokenRepository,
       PasswordResetRequestRepository passwordResetRequestRepository,
       OpaqueTokenService opaqueTokenService,
-      TokenHashingService tokenHashingService
+      TokenHashingService tokenHashingService,
+      PasswordResetMailService passwordResetMailService
   ) {
     this.userService = userService;
     this.passwordEncoder = passwordEncoder;
@@ -46,6 +51,7 @@ public class AuthService {
     this.passwordResetRequestRepository = passwordResetRequestRepository;
     this.opaqueTokenService = opaqueTokenService;
     this.tokenHashingService = tokenHashingService;
+    this.passwordResetMailService = passwordResetMailService;
   }
 
   @Transactional
@@ -94,18 +100,39 @@ public class AuthService {
 
   @Transactional
   public void requestPasswordReset(ForgotPasswordRequest request) {
-    try {
-      User user = userService.getByEmailOrThrow(request.email());
+    userService.findByEmail(request.email()).ifPresent(user -> {
       String rawToken = opaqueTokenService.generate();
+      invalidateActivePasswordResetRequests(user.getId());
       PasswordResetRequest resetRequest = new PasswordResetRequest(
           user,
           tokenHashingService.sha256(rawToken),
           Instant.now().plus(jwtService.properties().passwordResetTokenTtl())
       );
       passwordResetRequestRepository.save(resetRequest);
-    } catch (NotFoundException ignored) {
-      // Siempre respondemos igual para evitar enumeración de usuarios.
+      passwordResetMailService.sendPasswordResetMail(user, rawToken);
+    });
+  }
+
+  @Transactional
+  public void resetPassword(ResetPasswordRequest request) {
+    if (!request.newPassword().equals(request.confirmPassword())) {
+      throw new BadRequestException("La confirmación de contraseña no coincide.");
     }
+
+    validatePasswordPolicy(request.newPassword());
+
+    PasswordResetRequest resetRequest = passwordResetRequestRepository
+        .findByTokenHash(tokenHashingService.sha256(request.token()))
+        .orElseThrow(() -> new BadRequestException("El enlace de recuperación es inválido o ya expiró."));
+
+    if (!resetRequest.isActive()) {
+      throw new BadRequestException("El enlace de recuperación es inválido o ya expiró.");
+    }
+
+    User user = resetRequest.getUser();
+    user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+    resetRequest.markUsed();
+    revokeAllRefreshTokens(user.getId());
   }
 
   private void validateLogin(User user, String rawPassword) {
@@ -134,5 +161,39 @@ public class AuthService {
         jwtService.getAccessTokenExpiresInSeconds(),
         AuthUserResponse.from(user)
     );
+  }
+
+  private void invalidateActivePasswordResetRequests(java.util.UUID userId) {
+    List<PasswordResetRequest> requests = passwordResetRequestRepository.findAllByUser_IdAndUsedAtIsNull(userId);
+    if (requests.isEmpty()) {
+      return;
+    }
+
+    requests.forEach(PasswordResetRequest::markUsed);
+    passwordResetRequestRepository.saveAll(requests);
+  }
+
+  private void revokeAllRefreshTokens(java.util.UUID userId) {
+    List<RefreshToken> refreshTokens = refreshTokenRepository.findAllByUser_Id(userId);
+    if (refreshTokens.isEmpty()) {
+      return;
+    }
+
+    refreshTokens.forEach(RefreshToken::revoke);
+    refreshTokenRepository.saveAll(refreshTokens);
+  }
+
+  private void validatePasswordPolicy(String rawPassword) {
+    boolean hasMinLength = rawPassword.length() >= 8;
+    boolean hasUppercase = rawPassword.chars().anyMatch(Character::isUpperCase);
+    boolean hasDigit = rawPassword.chars().anyMatch(Character::isDigit);
+    boolean hasSpecial = rawPassword.chars().anyMatch(character ->
+        !Character.isLetterOrDigit(character) && !Character.isWhitespace(character));
+
+    if (!hasMinLength || !hasUppercase || !hasDigit || !hasSpecial) {
+      throw new BadRequestException(
+          "La contraseña debe tener al menos 8 caracteres, una mayúscula, un número y un carácter especial."
+      );
+    }
   }
 }
