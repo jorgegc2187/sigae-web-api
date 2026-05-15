@@ -40,23 +40,31 @@ public class AssetService {
   private final LocationRepository locationRepository;
   private final SupplierRepository supplierRepository;
   private final AssetTraceabilityRepository traceabilityRepository;
+  private final LoanService loanService;
 
   public AssetService(
       AssetRepository assetRepository,
       AssetTypeRepository assetTypeRepository,
       LocationRepository locationRepository,
       SupplierRepository supplierRepository,
-      AssetTraceabilityRepository traceabilityRepository
+      AssetTraceabilityRepository traceabilityRepository,
+      LoanService loanService
   ) {
     this.assetRepository = assetRepository;
     this.assetTypeRepository = assetTypeRepository;
     this.locationRepository = locationRepository;
     this.supplierRepository = supplierRepository;
     this.traceabilityRepository = traceabilityRepository;
+    this.loanService = loanService;
   }
 
   public List<Asset> findAll() {
     return assetRepository.findAll();
+  }
+
+  public com.sigae.api.model.dto.AssetResponse toResponse(Asset asset) {
+    UUID activeLoanId = loanService.activeLoanIdForAsset(asset.getId());
+    return com.sigae.api.model.dto.AssetResponse.from(asset, activeLoanId == null && loanService.isAssetAvailableForLoan(asset), activeLoanId);
   }
 
   public List<AssetInventoryGroupResponse> findGrouped(String search, UUID categoryId) {
@@ -73,6 +81,17 @@ public class AssetService {
   public Asset getById(UUID id) {
     return assetRepository.findById(id)
         .orElseThrow(() -> new NotFoundException("Activo no encontrado."));
+  }
+
+  public Asset lookupByScanValue(String value) {
+    String normalizedValue = normalizeOptional(value);
+    if (normalizedValue == null) {
+      throw new NotFoundException("No se encontró un activo con el valor escaneado.");
+    }
+
+    return assetRepository.findByCodeIgnoreCase(normalizedValue)
+        .or(() -> assetRepository.findByBarcodeIgnoreCase(normalizedValue))
+        .orElseThrow(() -> new NotFoundException("No se encontró un activo con el valor escaneado."));
   }
 
   public List<AssetTraceability> getTraceability(UUID assetId) {

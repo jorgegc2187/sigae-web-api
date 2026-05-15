@@ -1,6 +1,7 @@
 package com.sigae.api.controller;
 
 import com.sigae.api.model.dto.AssetReportRowResponse;
+import com.sigae.api.model.dto.LoanReportRowResponse;
 import com.sigae.api.model.dto.ReportExportFile;
 import com.sigae.api.model.dto.ReportExportFormat;
 import com.sigae.api.service.ReportService;
@@ -47,6 +48,38 @@ public class ReportController {
   ) {
     ReportExportFile file = reportService.exportAssetRows(
         categoryId,
+        locationId,
+        startDate,
+        endDate,
+        ReportExportFormat.from(format)
+    );
+
+    return ResponseEntity.ok()
+        .contentType(file.contentType())
+        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(file.filename()).build().toString())
+        .body(file.content());
+  }
+
+  @GetMapping("/loans")
+  public List<LoanReportRowResponse> listLoans(
+      @RequestParam(required = false) String search,
+      @RequestParam(required = false) UUID locationId,
+      @RequestParam(required = false) LocalDate startDate,
+      @RequestParam(required = false) LocalDate endDate
+  ) {
+    return reportService.listLoanRows(search, locationId, startDate, endDate);
+  }
+
+  @GetMapping("/loans/export")
+  public ResponseEntity<byte[]> exportLoans(
+      @RequestParam(required = false) String search,
+      @RequestParam(required = false) UUID locationId,
+      @RequestParam(required = false) LocalDate startDate,
+      @RequestParam(required = false) LocalDate endDate,
+      @RequestParam(defaultValue = "pdf") String format
+  ) {
+    ReportExportFile file = reportService.exportLoanRows(
+        search,
         locationId,
         startDate,
         endDate,

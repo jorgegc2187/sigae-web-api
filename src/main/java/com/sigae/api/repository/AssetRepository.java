@@ -11,7 +11,10 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface AssetRepository extends JpaRepository<Asset, UUID> {
+  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition"})
   Optional<Asset> findByCodeIgnoreCase(String code);
+
+  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition"})
   Optional<Asset> findByBarcodeIgnoreCase(String barcode);
 
   @Override

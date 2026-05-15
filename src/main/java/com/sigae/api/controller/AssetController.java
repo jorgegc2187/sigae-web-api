@@ -32,7 +32,7 @@ public class AssetController {
 
   @GetMapping
   public List<AssetResponse> list() {
-    return assetService.findAll().stream().map(AssetResponse::from).toList();
+    return assetService.findAll().stream().map(assetService::toResponse).toList();
   }
 
   @GetMapping("/grouped")
@@ -48,9 +48,14 @@ public class AssetController {
     return assetService.findGroupedById(groupId);
   }
 
+  @GetMapping("/lookup")
+  public AssetResponse lookup(@RequestParam String value) {
+    return assetService.toResponse(assetService.lookupByScanValue(value));
+  }
+
   @GetMapping("/{assetId}")
   public AssetResponse getById(@PathVariable UUID assetId) {
-    return AssetResponse.from(assetService.getById(assetId));
+    return assetService.toResponse(assetService.getById(assetId));
   }
 
   @GetMapping("/{assetId}/traceability")

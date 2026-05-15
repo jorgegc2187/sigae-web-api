@@ -23,9 +23,15 @@ public record AssetResponse(
     String barcode,
     LocalDate acquisitionDate,
     String notes,
-    List<AssetAttributeValueResponse> attributeValues
+    List<AssetAttributeValueResponse> attributeValues,
+    boolean availableForLoan,
+    UUID activeLoanId
 ) {
   public static AssetResponse from(Asset asset) {
+    return from(asset, asset.getCondition() == AssetCondition.BUENO || asset.getCondition() == AssetCondition.REGULAR, null);
+  }
+
+  public static AssetResponse from(Asset asset, boolean availableForLoan, UUID activeLoanId) {
     return new AssetResponse(
         asset.getId(),
         asset.getCode(),
@@ -43,7 +49,9 @@ public record AssetResponse(
         asset.getBarcode(),
         asset.getAcquisitionDate(),
         asset.getNotes(),
-        asset.getAttributeValues().stream().map(AssetAttributeValueResponse::from).toList()
+        asset.getAttributeValues().stream().map(AssetAttributeValueResponse::from).toList(),
+        availableForLoan,
+        activeLoanId
     );
   }
 }

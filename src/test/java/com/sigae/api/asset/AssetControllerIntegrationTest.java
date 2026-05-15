@@ -73,6 +73,48 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(jsonPath("$.units.length()").value(2));
   }
 
+  @Test
+  void lookupReturnsAssetByCode() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+
+    createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-001", "Laptop Lenovo ThinkPad");
+
+    mockMvc.perform(get("/api/assets/lookup")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .param("value", "cmp-2026-001"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.code").value("CMP-2026-001"))
+        .andExpect(jsonPath("$.name").value("Laptop Lenovo ThinkPad"));
+  }
+
+  @Test
+  void lookupReturnsAssetByBarcode() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+
+    createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-001", "Laptop Lenovo ThinkPad");
+
+    mockMvc.perform(get("/api/assets/lookup")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .param("value", "bc-cmp-2026-001"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.code").value("CMP-2026-001"))
+        .andExpect(jsonPath("$.barcode").value("BC-CMP-2026-001"));
+  }
+
+  @Test
+  void lookupReturnsNotFoundWhenAssetDoesNotExist() throws Exception {
+    String accessToken = createAdminAndLogin();
+
+    mockMvc.perform(get("/api/assets/lookup")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .param("value", "NO-EXISTE"))
+        .andExpect(status().isNotFound());
+  }
+
   private String createAdminAndLogin() throws Exception {
     createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
     return loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");

@@ -10,12 +10,14 @@ import com.sigae.api.model.entity.CatalogStatus;
 import com.sigae.api.model.entity.Category;
 import com.sigae.api.model.entity.Location;
 import com.sigae.api.model.entity.Supplier;
+import com.sigae.api.model.entity.Teacher;
 import com.sigae.api.model.entity.TraceabilityEventType;
 import com.sigae.api.repository.AssetRepository;
 import com.sigae.api.repository.AssetTraceabilityRepository;
 import com.sigae.api.repository.CategoryRepository;
 import com.sigae.api.repository.LocationRepository;
 import com.sigae.api.repository.SupplierRepository;
+import com.sigae.api.repository.TeacherRepository;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -33,6 +35,7 @@ public class DevInventorySeedService {
   private final CategoryRepository categoryRepository;
   private final LocationRepository locationRepository;
   private final SupplierRepository supplierRepository;
+  private final TeacherRepository teacherRepository;
   private final AssetRepository assetRepository;
   private final AssetTraceabilityRepository assetTraceabilityRepository;
 
@@ -40,12 +43,14 @@ public class DevInventorySeedService {
       CategoryRepository categoryRepository,
       LocationRepository locationRepository,
       SupplierRepository supplierRepository,
+      TeacherRepository teacherRepository,
       AssetRepository assetRepository,
       AssetTraceabilityRepository assetTraceabilityRepository
   ) {
     this.categoryRepository = categoryRepository;
     this.locationRepository = locationRepository;
     this.supplierRepository = supplierRepository;
+    this.teacherRepository = teacherRepository;
     this.assetRepository = assetRepository;
     this.assetTraceabilityRepository = assetTraceabilityRepository;
   }
@@ -55,6 +60,7 @@ public class DevInventorySeedService {
         .collect(Collectors.toMap(Category::getName, category -> category, (left, right) -> right, LinkedHashMap::new));
     Map<String, Location> locationsByName = seedLocations().stream()
         .collect(Collectors.toMap(Location::getName, location -> location, (left, right) -> right, LinkedHashMap::new));
+    seedTeachers();
     List<Supplier> suppliers = seedSuppliers();
 
     List<SeedAsset> assets = seedAssets();
@@ -287,6 +293,38 @@ public class DevInventorySeedService {
       suppliers.add(supplierRepository.save(supplier));
     }
     return suppliers;
+  }
+
+  private List<Teacher> seedTeachers() {
+    List<SeedTeacher> definitions = List.of(
+        new SeedTeacher("45678912", "Alejandro Cárdenas", "Matemáticas y Física", "a.cardenas@colegio.edu.pe", "+51 987 654 321"),
+        new SeedTeacher("70123456", "Maria Rodriguez", "Comunicación e Idiomas", "m.rodriguez@colegio.edu.pe", "+51 912 345 678"),
+        new SeedTeacher("12345678", "Jorge Sánchez", "Ciencia, Tecnología y Ambiente", "j.sanchez@colegio.edu.pe", "+51 955 443 322"),
+        new SeedTeacher("09876543", "Elena Paredes", "Ciencias Sociales", "e.paredes@colegio.edu.pe", "+51 944 332 211"),
+        new SeedTeacher("21436587", "Roberto Mendoza", "Educación Física", "r.mendoza@colegio.edu.pe", "+51 966 778 899"),
+        new SeedTeacher("87654321", "Sofia Torres", "Arte y Cultura", "s.torres@colegio.edu.pe", "+51 922 110 099")
+    );
+
+    List<Teacher> teachers = new ArrayList<>();
+    for (SeedTeacher definition : definitions) {
+      Teacher teacher = teacherRepository.findByDni(definition.dni())
+          .orElseGet(() -> new Teacher(
+              definition.dni(),
+              definition.fullName(),
+              definition.specialty(),
+              definition.email(),
+              definition.phone(),
+              CatalogStatus.ACTIVE
+          ));
+      teacher.setDni(definition.dni());
+      teacher.setFullName(definition.fullName());
+      teacher.setSpecialty(definition.specialty());
+      teacher.setEmail(definition.email());
+      teacher.setPhone(definition.phone());
+      teacher.setStatus(CatalogStatus.ACTIVE);
+      teachers.add(teacherRepository.save(teacher));
+    }
+    return teachers;
   }
 
   private void upsertAsset(
@@ -582,6 +620,8 @@ public class DevInventorySeedService {
   private record SeedLocation(String name, String description) {}
 
   private record SeedSupplier(String name, String ruc, String email, String phone, String address) {}
+
+  private record SeedTeacher(String dni, String fullName, String specialty, String email, String phone) {}
 
   private record SeedAsset(
       String code,
