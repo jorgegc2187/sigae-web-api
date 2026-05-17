@@ -46,15 +46,11 @@ public class PasswordSetupTokenService {
   }
 
   public PasswordResetRequest consumeValidToken(String rawToken) {
-    PasswordResetRequest resetRequest = passwordResetRequestRepository
-        .findByTokenHash(tokenHashingService.sha256(rawToken))
-        .orElseThrow(() -> new BadRequestException("El enlace de recuperación es inválido o ya expiró."));
+    return requireActiveRequest(rawToken);
+  }
 
-    if (!resetRequest.isActive()) {
-      throw new BadRequestException("El enlace de recuperación es inválido o ya expiró.");
-    }
-
-    return resetRequest;
+  public void validateToken(String rawToken) {
+    requireActiveRequest(rawToken);
   }
 
   @Transactional
@@ -66,5 +62,17 @@ public class PasswordSetupTokenService {
 
     requests.forEach(PasswordResetRequest::markUsed);
     passwordResetRequestRepository.saveAll(requests);
+  }
+
+  private PasswordResetRequest requireActiveRequest(String rawToken) {
+    PasswordResetRequest resetRequest = passwordResetRequestRepository
+        .findByTokenHash(tokenHashingService.sha256(rawToken))
+        .orElseThrow(() -> new BadRequestException("El enlace de recuperación es inválido o ya expiró."));
+
+    if (!resetRequest.isActive()) {
+      throw new BadRequestException("El enlace de recuperación es inválido o ya expiró.");
+    }
+
+    return resetRequest;
   }
 }

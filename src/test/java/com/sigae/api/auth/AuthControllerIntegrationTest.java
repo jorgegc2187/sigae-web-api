@@ -172,4 +172,72 @@ class AuthControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.message").value("El enlace de recuperación es inválido o ya expiró."));
   }
+
+  @Test
+  void validateResetPasswordTokenReturnsNoContentForActiveToken() throws Exception {
+    var user = createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    String rawToken = "valid-reset-token";
+    passwordResetRequestRepository.save(new PasswordResetRequest(
+        user,
+        tokenHashingService.sha256(rawToken),
+        Instant.now().plusSeconds(1800)
+    ));
+
+    mockMvc.perform(post("/api/auth/reset-password/validate")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "token": "%s"
+                }
+                """.formatted(rawToken)))
+        .andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+
+    org.assertj.core.api.Assertions.assertThat(passwordResetRequestRepository.findAll())
+        .allMatch(resetRequest -> !resetRequest.isUsed());
+  }
+
+  @Test
+  void validateResetPasswordTokenRejectsExpiredToken() throws Exception {
+    var user = createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    String rawToken = "expired-validate-token";
+    passwordResetRequestRepository.save(new PasswordResetRequest(
+        user,
+        tokenHashingService.sha256(rawToken),
+        Instant.now().minusSeconds(60)
+    ));
+
+    mockMvc.perform(post("/api/auth/reset-password/validate")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "token": "%s"
+                }
+                """.formatted(rawToken)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("El enlace de recuperación es inválido o ya expiró."));
+  }
+
+  @Test
+  void validateResetPasswordTokenRejectsUsedToken() throws Exception {
+    var user = createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    String rawToken = "used-validate-token";
+    PasswordResetRequest resetRequest = new PasswordResetRequest(
+        user,
+        tokenHashingService.sha256(rawToken),
+        Instant.now().plusSeconds(1800)
+    );
+    resetRequest.markUsed();
+    passwordResetRequestRepository.save(resetRequest);
+
+    mockMvc.perform(post("/api/auth/reset-password/validate")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "token": "%s"
+                }
+                """.formatted(rawToken)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("El enlace de recuperación es inválido o ya expiró."));
+  }
 }

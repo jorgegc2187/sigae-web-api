@@ -8,6 +8,7 @@ import com.sigae.api.model.dto.LoginRequest;
 import com.sigae.api.model.dto.LogoutRequest;
 import com.sigae.api.model.dto.RefreshTokenRequest;
 import com.sigae.api.model.dto.ResetPasswordRequest;
+import com.sigae.api.model.dto.ValidateResetPasswordTokenRequest;
 import com.sigae.api.service.AuthService;
 import com.sigae.api.security.AuthenticatedUser;
 import jakarta.validation.Valid;
@@ -63,5 +64,11 @@ public class AuthController {
   @ResponseStatus(HttpStatus.NO_CONTENT)
   public void resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
     authService.resetPassword(request);
+  }
+
+  @PostMapping("/reset-password/validate")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void validateResetPasswordToken(@Valid @RequestBody ValidateResetPasswordTokenRequest request) {
+    authService.validateResetPasswordToken(request.token());
   }
 }

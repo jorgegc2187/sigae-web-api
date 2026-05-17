@@ -105,6 +105,10 @@ public class AuthService {
     });
   }
 
+  public void validateResetPasswordToken(String token) {
+    passwordSetupTokenService.validateToken(token);
+  }
+
   @Transactional
   public void resetPassword(ResetPasswordRequest request) {
     if (!request.newPassword().equals(request.confirmPassword())) {
