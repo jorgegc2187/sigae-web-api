@@ -77,7 +77,7 @@ class CatalogInventoryControllerIntegrationTest extends IntegrationTestSupport {
     String adminToken = createAdminAndLogin();
     UUID assetTypeId = createAssetType(adminToken);
     UUID attributeDefinitionId = getFirstAttributeDefinitionId(adminToken);
-    UUID locationId = createLocation(adminToken);
+    UUID locationId = createCatalogLocation(adminToken);
     UUID supplierId = createSupplier(adminToken);
 
     createUser("Luis Quispe", "luis@sigae.edu.pe", "encargado123", UserRole.ENCARGADO, UserStatus.ACTIVE);
@@ -155,7 +155,7 @@ class CatalogInventoryControllerIntegrationTest extends IntegrationTestSupport {
     return loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
   }
 
-  private UUID createLocation(String accessToken) throws Exception {
+  private UUID createCatalogLocation(String accessToken) throws Exception {
     String response = mockMvc.perform(post("/api/locations")
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
             .contentType(MediaType.APPLICATION_JSON)

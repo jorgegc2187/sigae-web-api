@@ -6,14 +6,21 @@ import com.sigae.api.exception.NotFoundException;
 import com.sigae.api.model.dto.CreateUserRequest;
 import com.sigae.api.model.dto.UpdateUserRequest;
 import com.sigae.api.model.dto.UpdateUserStatusRequest;
+import com.sigae.api.model.entity.Location;
 import com.sigae.api.model.entity.User;
+import com.sigae.api.model.entity.UserRole;
 import com.sigae.api.model.entity.UserStatus;
+import com.sigae.api.repository.LocationRepository;
 import com.sigae.api.repository.UserRepository;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,17 +30,20 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
   private final UserRepository userRepository;
+  private final LocationRepository locationRepository;
   private final PasswordEncoder passwordEncoder;
   private final PasswordSetupTokenService passwordSetupTokenService;
   private final UserInvitationMailService userInvitationMailService;
 
   public UserService(
       UserRepository userRepository,
+      LocationRepository locationRepository,
       PasswordEncoder passwordEncoder,
       PasswordSetupTokenService passwordSetupTokenService,
       UserInvitationMailService userInvitationMailService
   ) {
     this.userRepository = userRepository;
+    this.locationRepository = locationRepository;
     this.passwordEncoder = passwordEncoder;
     this.passwordSetupTokenService = passwordSetupTokenService;
     this.userInvitationMailService = userInvitationMailService;
@@ -44,6 +54,7 @@ public class UserService {
     String normalizedEmail = normalizeEmail(request.email());
     ensureEmailAvailable(normalizedEmail, null);
     String passwordHash = passwordEncoder.encode(resolveInitialPassword(request));
+    Set<Location> assignedLocations = resolveAssignedLocations(request.role(), request.locationIds());
 
     User user = new User(
         request.fullName().trim(),
@@ -52,6 +63,7 @@ public class UserService {
         request.role(),
         request.status()
     );
+    user.setLocations(assignedLocations);
     User createdUser = userRepository.save(user);
 
     if (request.shouldSendInvitation()) {
@@ -67,10 +79,12 @@ public class UserService {
     User user = getById(userId);
     String normalizedEmail = normalizeEmail(request.email());
     ensureEmailAvailable(normalizedEmail, user.getId());
+    Set<Location> assignedLocations = resolveAssignedLocations(request.role(), request.locationIds());
 
     user.setFullName(request.fullName().trim());
     user.setEmail(normalizedEmail);
     user.setRole(request.role());
+    user.setLocations(assignedLocations);
     return userRepository.save(user);
   }
 
@@ -145,5 +159,41 @@ public class UserService {
     }
 
     return request.password();
+  }
+
+  private Set<Location> resolveAssignedLocations(UserRole role, List<UUID> locationIds) {
+    if (role == UserRole.ADMINISTRADOR) {
+      return Set.of();
+    }
+
+    if (locationIds == null || locationIds.isEmpty()) {
+      throw new BadRequestException("Debe asignar al menos una ubicación para este rol.");
+    }
+
+    LinkedHashSet<UUID> uniqueLocationIds = new LinkedHashSet<>(locationIds);
+    if (uniqueLocationIds.size() != locationIds.size()) {
+      throw new BadRequestException("No se pueden repetir ubicaciones asignadas.");
+    }
+
+    Map<UUID, Location> locationsById = locationRepository.findAllById(uniqueLocationIds).stream()
+        .collect(Collectors.toMap(Location::getId, location -> location));
+
+    if (locationsById.size() != uniqueLocationIds.size()) {
+      throw new BadRequestException("Una o más ubicaciones asignadas no existen.");
+    }
+
+    return uniqueLocationIds.stream()
+        .map(requireLocation(locationsById))
+        .collect(Collectors.toCollection(LinkedHashSet::new));
+  }
+
+  private java.util.function.Function<UUID, Location> requireLocation(Map<UUID, Location> locationsById) {
+    return locationId -> {
+      Location location = locationsById.get(locationId);
+      if (location == null) {
+        throw new BadRequestException("Una o más ubicaciones asignadas no existen.");
+      }
+      return location;
+    };
   }
 }

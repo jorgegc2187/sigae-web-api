@@ -2,7 +2,10 @@ package com.sigae.api.support;
 
 import tools.jackson.databind.ObjectMapper;
 import com.sigae.api.repository.PasswordResetRequestRepository;
+import com.sigae.api.repository.LocationRepository;
 import com.sigae.api.repository.RefreshTokenRepository;
+import com.sigae.api.model.entity.CatalogStatus;
+import com.sigae.api.model.entity.Location;
 import com.sigae.api.model.entity.User;
 import com.sigae.api.repository.UserRepository;
 import com.sigae.api.model.entity.UserRole;
@@ -46,11 +49,15 @@ public abstract class IntegrationTestSupport {
   @Autowired
   protected JdbcTemplate jdbcTemplate;
 
+  @Autowired
+  protected LocationRepository locationRepository;
+
   @BeforeEach
   void cleanDatabase() {
     jdbcTemplate.update("delete from loan_attachment");
     jdbcTemplate.update("delete from loan_asset");
     jdbcTemplate.update("delete from loan");
+    jdbcTemplate.update("delete from user_location");
     jdbcTemplate.update("delete from asset_traceability");
     jdbcTemplate.update("delete from asset_attribute_value");
     jdbcTemplate.update("delete from asset");
@@ -68,6 +75,14 @@ public abstract class IntegrationTestSupport {
   protected User createUser(String fullName, String email, String password, UserRole role, UserStatus status) {
     User user = new User(fullName, email, passwordEncoder.encode(password), role, status);
     return userRepository.save(user);
+  }
+
+  protected Location createLocation(String name) {
+    return locationRepository.save(new Location(
+        name,
+        "Ubicación de prueba",
+        CatalogStatus.ACTIVE
+    ));
   }
 
   protected String loginAndGetAccessToken(String email, String password) throws Exception {

@@ -4,8 +4,14 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "app_user")
@@ -30,6 +36,14 @@ public class User extends BaseEntity {
 
   @Column
   private Instant lastAccessAt;
+
+  @ManyToMany(fetch = FetchType.LAZY)
+  @JoinTable(
+      name = "user_location",
+      joinColumns = @JoinColumn(name = "user_id"),
+      inverseJoinColumns = @JoinColumn(name = "location_id")
+  )
+  private Set<Location> locations = new LinkedHashSet<>();
 
   protected User() {}
 
@@ -87,5 +101,13 @@ public class User extends BaseEntity {
 
   public void setLastAccessAt(Instant lastAccessAt) {
     this.lastAccessAt = lastAccessAt;
+  }
+
+  public Set<Location> getLocations() {
+    return locations;
+  }
+
+  public void setLocations(Set<Location> locations) {
+    this.locations = new LinkedHashSet<>(locations);
   }
 }

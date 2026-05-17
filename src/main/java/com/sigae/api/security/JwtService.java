@@ -1,6 +1,7 @@
 package com.sigae.api.security;
 
 import com.sigae.api.config.SecurityProperties;
+import com.sigae.api.model.entity.Location;
 import com.sigae.api.model.entity.User;
 import com.sigae.api.model.entity.UserRole;
 import io.jsonwebtoken.Claims;
@@ -10,6 +11,7 @@ import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import javax.crypto.SecretKey;
@@ -34,7 +36,7 @@ public class JwtService {
         .claim("userId", user.getId().toString())
         .claim("email", user.getEmail())
         .claim("role", user.getRole().name())
-        .claim("locationIds", List.of())
+        .claim("locationIds", resolveLocationIds(user))
         .issuedAt(Date.from(now))
         .expiration(Date.from(expiration))
         .signWith(getSigningKey())
@@ -85,5 +87,16 @@ public class JwtService {
       }
     }
     return List.copyOf(values);
+  }
+
+  private List<String> resolveLocationIds(User user) {
+    if (user.getRole() == UserRole.ADMINISTRADOR) {
+      return List.of();
+    }
+
+    return user.getLocations().stream()
+        .sorted(Comparator.comparing(Location::getName, String.CASE_INSENSITIVE_ORDER))
+        .map(location -> location.getId().toString())
+        .toList();
   }
 }

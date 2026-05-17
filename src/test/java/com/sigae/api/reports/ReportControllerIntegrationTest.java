@@ -21,7 +21,7 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
   void adminCanListAssetReportWithFilters() throws Exception {
     String accessToken = createAdminAndLogin();
     AssetCatalog catalog = createAssetCatalog(accessToken);
-    UUID locationId = createLocation(accessToken);
+    UUID locationId = createReportLocation(accessToken);
     createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-001", "2026-01-15");
 
     mockMvc.perform(get("/api/reports/assets")
@@ -40,7 +40,7 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
   void soloLecturaCanExportAssetReports() throws Exception {
     String adminToken = createAdminAndLogin();
     AssetCatalog catalog = createAssetCatalog(adminToken);
-    UUID locationId = createLocation(adminToken);
+    UUID locationId = createReportLocation(adminToken);
     createAsset(adminToken, catalog.assetTypeId(), locationId, "CMP-2026-002", "2026-02-15");
 
     createUser("Ana Lectura", "lectura@sigae.edu.pe", "lectura123", UserRole.SOLO_LECTURA, UserStatus.ACTIVE);
@@ -77,7 +77,7 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
     return loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
   }
 
-  private UUID createLocation(String accessToken) throws Exception {
+  private UUID createReportLocation(String accessToken) throws Exception {
     String response = mockMvc.perform(post("/api/locations")
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
             .contentType(MediaType.APPLICATION_JSON)

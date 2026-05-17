@@ -1,9 +1,12 @@
 package com.sigae.api.model.dto;
 
 import com.sigae.api.model.entity.User;
+import com.sigae.api.model.entity.Location;
 import com.sigae.api.model.entity.UserRole;
 import com.sigae.api.model.entity.UserStatus;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 public record UserResponse(
@@ -12,17 +15,25 @@ public record UserResponse(
     String email,
     UserRole role,
     UserStatus status,
-    Instant lastAccessAt
+    Instant lastAccessAt,
+    List<UUID> locationIds,
+    List<String> locationNames
 ) {
 
   public static UserResponse from(User user) {
+    List<Location> orderedLocations = user.getLocations().stream()
+        .sorted(Comparator.comparing(Location::getName, String.CASE_INSENSITIVE_ORDER))
+        .toList();
+
     return new UserResponse(
         user.getId(),
         user.getFullName(),
         user.getEmail(),
         user.getRole(),
         user.getStatus(),
-        user.getLastAccessAt()
+        user.getLastAccessAt(),
+        orderedLocations.stream().map(Location::getId).toList(),
+        orderedLocations.stream().map(Location::getName).toList()
     );
   }
 }

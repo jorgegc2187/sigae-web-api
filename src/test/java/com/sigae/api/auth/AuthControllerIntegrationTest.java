@@ -1,6 +1,7 @@
 package com.sigae.api.auth;
 
 import com.sigae.api.model.entity.PasswordResetRequest;
+import com.sigae.api.security.JwtService;
 import com.sigae.api.support.IntegrationTestSupport;
 import com.sigae.api.model.entity.UserRole;
 import com.sigae.api.model.entity.UserStatus;
@@ -19,6 +20,9 @@ class AuthControllerIntegrationTest extends IntegrationTestSupport {
 
   @Autowired
   private TokenHashingService tokenHashingService;
+
+  @Autowired
+  private JwtService jwtService;
 
   private static final String FORGOT_PASSWORD_SUCCESS_MESSAGE =
       "Si el correo está registrado, recibirás instrucciones de recuperación en los próximos minutos.";
@@ -41,6 +45,32 @@ class AuthControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(jsonPath("$.tokenType").value("Bearer"))
         .andExpect(jsonPath("$.user.email").value("admin@sigae.edu.pe"))
         .andExpect(jsonPath("$.user.role").value("Administrador"));
+  }
+
+  @Test
+  void loginIncludesAssignedLocationIdsForNonAdminUsers() throws Exception {
+    var location = createLocation("Biblioteca");
+    var user = createUser("Ana Torres", "ana@sigae.edu.pe", "admin123456", UserRole.ENCARGADO, UserStatus.ACTIVE);
+    user.setLocations(java.util.Set.of(location));
+    userRepository.save(user);
+
+    String response = mockMvc.perform(post("/api/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "email": "ana@sigae.edu.pe",
+                  "password": "admin123456"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.user.locationIds.length()").value(1))
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    String accessToken = objectMapper.readTree(response).get("accessToken").asText();
+    org.assertj.core.api.Assertions.assertThat(jwtService.parseAccessToken(accessToken).locationIds())
+        .containsExactly(location.getId().toString());
   }
 
   @Test
