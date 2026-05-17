@@ -1,6 +1,8 @@
 package com.sigae.api.repository;
 
 import com.sigae.api.model.entity.User;
+import com.sigae.api.model.entity.UserRole;
+import com.sigae.api.model.entity.UserStatus;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -20,4 +22,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
   Optional<User> findByEmailIgnoreCase(String email);
 
   boolean existsByEmailIgnoreCase(String email);
+
+  long countByRoleAndStatus(UserRole role, UserStatus status);
 }

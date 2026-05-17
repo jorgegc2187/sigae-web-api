@@ -12,6 +12,7 @@ import com.sigae.api.model.entity.UserRole;
 import com.sigae.api.model.entity.UserStatus;
 import com.sigae.api.repository.LocationRepository;
 import com.sigae.api.repository.UserRepository;
+import com.sigae.api.security.AuthenticatedUser;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -75,11 +76,12 @@ public class UserService {
   }
 
   @Transactional
-  public User update(UUID userId, UpdateUserRequest request) {
+  public User update(UUID userId, UpdateUserRequest request, AuthenticatedUser authenticatedUser) {
     User user = getById(userId);
     String normalizedEmail = normalizeEmail(request.email());
     ensureEmailAvailable(normalizedEmail, user.getId());
     Set<Location> assignedLocations = resolveAssignedLocations(request.role(), request.locationIds());
+    validateRoleChange(user, request.role(), authenticatedUser);
 
     user.setFullName(request.fullName().trim());
     user.setEmail(normalizedEmail);
@@ -89,8 +91,9 @@ public class UserService {
   }
 
   @Transactional
-  public User updateStatus(UUID userId, UpdateUserStatusRequest request) {
+  public User updateStatus(UUID userId, UpdateUserStatusRequest request, AuthenticatedUser authenticatedUser) {
     User user = getById(userId);
+    validateStatusChange(user, request.status(), authenticatedUser);
     user.setStatus(request.status());
     return userRepository.save(user);
   }
@@ -163,6 +166,47 @@ public class UserService {
 
   private UserStatus resolveInitialStatus(CreateUserRequest request) {
     return request.shouldSendInvitation() ? UserStatus.PENDING : UserStatus.ACTIVE;
+  }
+
+  private void validateRoleChange(User user, UserRole nextRole, AuthenticatedUser authenticatedUser) {
+    if (user.getRole() != UserRole.ADMINISTRADOR || nextRole == UserRole.ADMINISTRADOR) {
+      return;
+    }
+
+    ensureNotSelfAdminMutation(user, authenticatedUser, "No puede quitarse a sí mismo el rol de administrador.");
+    ensureNotLastActiveAdministrator(user, "No se puede quitar el rol al último administrador activo.");
+  }
+
+  private void validateStatusChange(User user, UserStatus nextStatus, AuthenticatedUser authenticatedUser) {
+    if (user.getStatus() == UserStatus.PENDING || nextStatus == UserStatus.PENDING) {
+      throw new BadRequestException("Los usuarios pendientes no pueden activarse o desactivarse desde esta sección.");
+    }
+
+    if (user.getStatus() == nextStatus) {
+      return;
+    }
+
+    if (nextStatus == UserStatus.INACTIVE) {
+      ensureNotSelfAdminMutation(user, authenticatedUser, "No puede desactivarse a sí mismo.");
+      ensureNotLastActiveAdministrator(user, "No se puede desactivar al último administrador activo.");
+    }
+  }
+
+  private void ensureNotSelfAdminMutation(User targetUser, AuthenticatedUser authenticatedUser, String message) {
+    if (authenticatedUser != null && targetUser.getId().equals(authenticatedUser.userId())) {
+      throw new ConflictException(message);
+    }
+  }
+
+  private void ensureNotLastActiveAdministrator(User targetUser, String message) {
+    if (targetUser.getRole() != UserRole.ADMINISTRADOR || targetUser.getStatus() != UserStatus.ACTIVE) {
+      return;
+    }
+
+    long activeAdministrators = userRepository.countByRoleAndStatus(UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    if (activeAdministrators <= 1) {
+      throw new ConflictException(message);
+    }
   }
 
   private Set<Location> resolveAssignedLocations(UserRole role, List<UUID> locationIds) {

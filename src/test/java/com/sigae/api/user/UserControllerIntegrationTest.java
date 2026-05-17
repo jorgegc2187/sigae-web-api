@@ -16,6 +16,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -162,5 +163,103 @@ class UserControllerIntegrationTest extends IntegrationTestSupport {
     mockMvc.perform(get("/api/users")
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void adminCanDeactivateAnotherUser() throws Exception {
+    createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    createUser("Ana Torres", "ana@sigae.edu.pe", "admin123456", UserRole.ENCARGADO, UserStatus.ACTIVE);
+    String accessToken = loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
+    String targetUserId = userRepository.findByEmailIgnoreCase("ana@sigae.edu.pe").orElseThrow().getId().toString();
+
+    mockMvc.perform(patch("/api/users/{userId}/status", targetUserId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "status": "INACTIVE"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("Inactivo"));
+  }
+
+  @Test
+  void adminCannotDeactivateSelf() throws Exception {
+    createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    String accessToken = loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
+    String currentUserId = userRepository.findByEmailIgnoreCase("admin@sigae.edu.pe").orElseThrow().getId().toString();
+
+    mockMvc.perform(patch("/api/users/{userId}/status", currentUserId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "status": "INACTIVE"
+                }
+                """))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("No puede desactivarse a sí mismo."));
+  }
+
+  @Test
+  void adminCannotDeactivateLastActiveAdministrator() throws Exception {
+    createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    createUser("Laura Ruiz", "laura@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.INACTIVE);
+    String accessToken = loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
+    String currentUserId = userRepository.findByEmailIgnoreCase("admin@sigae.edu.pe").orElseThrow().getId().toString();
+
+    mockMvc.perform(patch("/api/users/{userId}/status", currentUserId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "status": "INACTIVE"
+                }
+                """))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("No puede desactivarse a sí mismo."));
+  }
+
+  @Test
+  void adminCannotDemoteLastActiveAdministrator() throws Exception {
+    createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    createUser("Laura Ruiz", "laura@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.INACTIVE);
+    Location lab = createLocation("Aula de Cómputo");
+    String accessToken = loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
+    String currentUserId = userRepository.findByEmailIgnoreCase("admin@sigae.edu.pe").orElseThrow().getId().toString();
+
+    mockMvc.perform(patch("/api/users/{userId}", currentUserId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "fullName": "Carlos Mendoza",
+                  "email": "admin@sigae.edu.pe",
+                  "role": "ENCARGADO",
+                  "locationIds": ["%s"]
+                }
+                """.formatted(lab.getId())))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.message").value("No puede quitarse a sí mismo el rol de administrador."));
+  }
+
+  @Test
+  void pendingUsersCannotBeUpdatedThroughStatusToggle() throws Exception {
+    createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    createUser("Ana Torres", "ana@sigae.edu.pe", "admin123456", UserRole.ENCARGADO, UserStatus.PENDING);
+    String accessToken = loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
+    String targetUserId = userRepository.findByEmailIgnoreCase("ana@sigae.edu.pe").orElseThrow().getId().toString();
+
+    mockMvc.perform(patch("/api/users/{userId}/status", targetUserId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "status": "ACTIVE"
+                }
+                """))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("Los usuarios pendientes no pueden activarse o desactivarse desde esta sección."));
   }
 }
