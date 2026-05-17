@@ -75,9 +75,7 @@ public class AuthService {
       throw new BadCredentialsException("Refresh token inválido o expirado.");
     }
 
-    if (refreshToken.getUser().getStatus() != UserStatus.ACTIVE) {
-      throw new BadCredentialsException("La cuenta se encuentra inactiva.");
-    }
+    validateUserIsActive(refreshToken.getUser());
 
     refreshToken.revoke();
     refreshTokenRepository.save(refreshToken);
@@ -120,17 +118,28 @@ public class AuthService {
     PasswordResetRequest resetRequest = passwordSetupTokenService.consumeValidToken(request.token());
     User user = resetRequest.getUser();
     user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+    if (user.getStatus() == UserStatus.PENDING) {
+      user.setStatus(UserStatus.ACTIVE);
+    }
     resetRequest.markUsed();
     revokeAllRefreshTokens(user.getId());
   }
 
   private void validateLogin(User user, String rawPassword) {
-    if (user.getStatus() != UserStatus.ACTIVE) {
-      throw new BadCredentialsException("La cuenta se encuentra inactiva.");
-    }
+    validateUserIsActive(user);
 
     if (!passwordEncoder.matches(rawPassword, user.getPasswordHash())) {
       throw new BadCredentialsException("Credenciales inválidas.");
+    }
+  }
+
+  private void validateUserIsActive(User user) {
+    if (user.getStatus() == UserStatus.PENDING) {
+      throw new BadCredentialsException("La cuenta aún no ha completado la activación.");
+    }
+
+    if (user.getStatus() != UserStatus.ACTIVE) {
+      throw new BadCredentialsException("La cuenta se encuentra inactiva.");
     }
   }
 

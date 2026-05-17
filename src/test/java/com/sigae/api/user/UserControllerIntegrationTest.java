@@ -41,7 +41,6 @@ class UserControllerIntegrationTest extends IntegrationTestSupport {
                   "email": "luis@sigae.edu.pe",
                   "password": "encargado123",
                   "role": "Encargado",
-                  "status": "Activo",
                   "locationIds": ["%s", "%s"]
                 }
                 """.formatted(lab.getId(), library.getId())))
@@ -67,14 +66,14 @@ class UserControllerIntegrationTest extends IntegrationTestSupport {
                   "fullName": "Ana Torres",
                   "email": "ana@sigae.edu.pe",
                   "role": "Encargado",
-                  "status": "Activo",
                   "locationIds": ["%s"],
                   "sendInvitation": true
                 }
                 """.formatted(lab.getId())))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.email").value("ana@sigae.edu.pe"))
-        .andExpect(jsonPath("$.role").value("Encargado"));
+        .andExpect(jsonPath("$.role").value("Encargado"))
+        .andExpect(jsonPath("$.status").value("Pendiente"));
 
     org.assertj.core.api.Assertions.assertThat(passwordResetRequestRepository.findAll()).hasSize(1);
   }
@@ -97,7 +96,6 @@ class UserControllerIntegrationTest extends IntegrationTestSupport {
                   "fullName": "Paula Ortiz",
                   "email": "paula@sigae.edu.pe",
                   "role": "Encargado",
-                  "status": "Activo",
                   "locationIds": ["%s"],
                   "sendInvitation": true
                 }
@@ -126,7 +124,6 @@ class UserControllerIntegrationTest extends IntegrationTestSupport {
                   "email": "maria@sigae.edu.pe",
                   "password": "AdminTemp1!",
                   "role": "Administrador",
-                  "status": "Activo",
                   "locationIds": ["%s"]
                 }
                 """.formatted(lab.getId())))
@@ -150,7 +147,6 @@ class UserControllerIntegrationTest extends IntegrationTestSupport {
                   "email": "luis@sigae.edu.pe",
                   "password": "encargado123",
                   "role": "Encargado",
-                  "status": "Activo",
                   "locationIds": []
                 }
                 """))

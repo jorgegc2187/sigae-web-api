@@ -1,7 +1,6 @@
 package com.sigae.api.model.dto;
 
 import com.sigae.api.model.entity.UserRole;
-import com.sigae.api.model.entity.UserStatus;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -14,7 +13,6 @@ public record CreateUserRequest(
     @NotBlank @Email @Size(max = 320) String email,
     @Size(min = 8, max = 120) String password,
     @NotNull UserRole role,
-    @NotNull UserStatus status,
     List<UUID> locationIds,
     Boolean sendInvitation
 ) {

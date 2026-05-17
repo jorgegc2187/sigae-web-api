@@ -90,6 +90,22 @@ class AuthControllerIntegrationTest extends IntegrationTestSupport {
   }
 
   @Test
+  void loginFailsForPendingUser() throws Exception {
+    createUser("Ana Torres", "ana@sigae.edu.pe", "admin123456", UserRole.ENCARGADO, UserStatus.PENDING);
+
+    mockMvc.perform(post("/api/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "email": "ana@sigae.edu.pe",
+                  "password": "admin123456"
+                }
+                """))
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.message").value("La cuenta aún no ha completado la activación."));
+  }
+
+  @Test
   void forgotPasswordCreatesResetRequestForExistingUser() throws Exception {
     createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
 
@@ -178,6 +194,34 @@ class AuthControllerIntegrationTest extends IntegrationTestSupport {
                 """))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.user.email").value("admin@sigae.edu.pe"));
+  }
+
+  @Test
+  void resetPasswordActivatesPendingUser() throws Exception {
+    var user = createUser("Ana Torres", "ana@sigae.edu.pe", "admin123456", UserRole.ENCARGADO, UserStatus.PENDING);
+    String rawToken = "pending-reset-token";
+    passwordResetRequestRepository.save(new PasswordResetRequest(
+        user,
+        tokenHashingService.sha256(rawToken),
+        Instant.now().plusSeconds(1800)
+    ));
+
+    mockMvc.perform(post("/api/auth/reset-password")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "token": "%s",
+                  "newPassword": "NuevaClave1!",
+                  "confirmPassword": "NuevaClave1!"
+                }
+                """.formatted(rawToken)))
+        .andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+
+    org.assertj.core.api.Assertions.assertThat(userRepository.findById(user.getId()))
+        .get()
+        .extracting(com.sigae.api.model.entity.User::getStatus)
+        .isEqualTo(UserStatus.ACTIVE);
   }
 
   @Test

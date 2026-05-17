@@ -61,7 +61,7 @@ public class UserService {
         normalizedEmail,
         passwordHash,
         request.role(),
-        request.status()
+        resolveInitialStatus(request)
     );
     user.setLocations(assignedLocations);
     User createdUser = userRepository.save(user);
@@ -159,6 +159,10 @@ public class UserService {
     }
 
     return request.password();
+  }
+
+  private UserStatus resolveInitialStatus(CreateUserRequest request) {
+    return request.shouldSendInvitation() ? UserStatus.PENDING : UserStatus.ACTIVE;
   }
 
   private Set<Location> resolveAssignedLocations(UserRole role, List<UUID> locationIds) {

@@ -5,7 +5,8 @@ import com.fasterxml.jackson.annotation.JsonValue;
 
 public enum UserStatus {
   ACTIVE("Activo"),
-  INACTIVE("Inactivo");
+  INACTIVE("Inactivo"),
+  PENDING("Pendiente");
 
   private final String label;
 
