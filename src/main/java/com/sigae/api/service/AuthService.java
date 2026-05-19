@@ -5,6 +5,7 @@ import com.sigae.api.model.dto.AuthUserResponse;
 import com.sigae.api.model.dto.ForgotPasswordRequest;
 import com.sigae.api.model.dto.ResetPasswordRequest;
 import com.sigae.api.exception.BadRequestException;
+import com.sigae.api.model.entity.PasswordResetPurpose;
 import com.sigae.api.model.entity.PasswordResetRequest;
 import com.sigae.api.exception.NotFoundException;
 import com.sigae.api.model.entity.RefreshToken;
@@ -98,7 +99,7 @@ public class AuthService {
   @Transactional
   public void requestPasswordReset(ForgotPasswordRequest request) {
     userService.findByEmail(request.email()).ifPresent(user -> {
-      String rawToken = passwordSetupTokenService.issueToken(user);
+      String rawToken = passwordSetupTokenService.issuePasswordResetToken(user);
       passwordResetMailService.sendPasswordResetMail(user, rawToken);
     });
   }
@@ -118,7 +119,7 @@ public class AuthService {
     PasswordResetRequest resetRequest = passwordSetupTokenService.consumeValidToken(request.token());
     User user = resetRequest.getUser();
     user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
-    if (user.getStatus() == UserStatus.PENDING) {
+    if (resetRequest.getPurpose() == PasswordResetPurpose.ACCOUNT_SETUP && user.getStatus() == UserStatus.PENDING) {
       user.setStatus(UserStatus.ACTIVE);
     }
     resetRequest.markUsed();

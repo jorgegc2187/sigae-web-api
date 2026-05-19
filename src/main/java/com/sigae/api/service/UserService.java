@@ -4,6 +4,7 @@ import com.sigae.api.exception.ConflictException;
 import com.sigae.api.exception.BadRequestException;
 import com.sigae.api.exception.NotFoundException;
 import com.sigae.api.model.dto.CreateUserRequest;
+import com.sigae.api.model.dto.UserInvitationInfo;
 import com.sigae.api.model.dto.UpdateUserRequest;
 import com.sigae.api.model.dto.UpdateUserStatusRequest;
 import com.sigae.api.model.entity.Location;
@@ -68,7 +69,7 @@ public class UserService {
     User createdUser = userRepository.save(user);
 
     if (request.shouldSendInvitation()) {
-      String rawToken = passwordSetupTokenService.issueToken(createdUser);
+      String rawToken = passwordSetupTokenService.issueAccountSetupToken(createdUser);
       userInvitationMailService.sendInvitationMail(createdUser, rawToken);
     }
 
@@ -96,6 +97,26 @@ public class UserService {
     validateStatusChange(user, request.status(), authenticatedUser);
     user.setStatus(request.status());
     return userRepository.save(user);
+  }
+
+  @Transactional
+  public User cancelInvitation(UUID userId) {
+    User user = getById(userId);
+    ensurePendingUserForInvitationAction(user);
+    passwordSetupTokenService.cancelInvitation(user.getId());
+    return user;
+  }
+
+  @Transactional
+  public User resendInvitation(UUID userId) {
+    User user = getById(userId);
+    ensurePendingUserForInvitationAction(user);
+    if (passwordSetupTokenService.getInvitationInfo(user.getId()) == null) {
+      throw new BadRequestException("El usuario no tiene una invitación previa para reenviar.");
+    }
+    String rawToken = passwordSetupTokenService.issueAccountSetupToken(user);
+    userInvitationMailService.sendInvitationMail(user, rawToken);
+    return user;
   }
 
   @Transactional
@@ -138,6 +159,14 @@ public class UserService {
     return userRepository.findByEmailIgnoreCase(normalizeEmail(email))
         .filter(user -> user.getStatus() == UserStatus.ACTIVE)
         .orElseThrow(() -> new NotFoundException("Usuario no encontrado."));
+  }
+
+  public UserInvitationInfo getInvitationInfo(User user) {
+    if (user.getStatus() != UserStatus.PENDING) {
+      return null;
+    }
+
+    return passwordSetupTokenService.getInvitationInfo(user.getId());
   }
 
   private void ensureEmailAvailable(String normalizedEmail, UUID currentUserId) {
@@ -189,6 +218,12 @@ public class UserService {
     if (nextStatus == UserStatus.INACTIVE) {
       ensureNotSelfAdminMutation(user, authenticatedUser, "No puede desactivarse a sí mismo.");
       ensureNotLastActiveAdministrator(user, "No se puede desactivar al último administrador activo.");
+    }
+  }
+
+  private void ensurePendingUserForInvitationAction(User user) {
+    if (user.getStatus() != UserStatus.PENDING) {
+      throw new BadRequestException("Solo los usuarios pendientes admiten acciones de invitación.");
     }
   }
 

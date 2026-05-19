@@ -1,7 +1,9 @@
 package com.sigae.api.user;
 
 import com.sigae.api.exception.MailDeliveryException;
+import com.sigae.api.model.entity.PasswordResetPurpose;
 import com.sigae.api.model.entity.Location;
+import com.sigae.api.model.entity.PasswordResetRequest;
 import com.sigae.api.service.UserInvitationMailService;
 import com.sigae.api.support.IntegrationTestSupport;
 import com.sigae.api.model.entity.UserRole;
@@ -74,7 +76,8 @@ class UserControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.email").value("ana@sigae.edu.pe"))
         .andExpect(jsonPath("$.role").value("Encargado"))
-        .andExpect(jsonPath("$.status").value("Pendiente"));
+        .andExpect(jsonPath("$.status").value("Pendiente"))
+        .andExpect(jsonPath("$.invitationStatus").value("ACTIVE"));
 
     org.assertj.core.api.Assertions.assertThat(passwordResetRequestRepository.findAll()).hasSize(1);
   }
@@ -261,5 +264,89 @@ class UserControllerIntegrationTest extends IntegrationTestSupport {
                 """))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.message").value("Los usuarios pendientes no pueden activarse o desactivarse desde esta sección."));
+  }
+
+  @Test
+  void listShowsExpiredInvitationStatusForPendingUser() throws Exception {
+    createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    var pendingUser = createUser("Ana Torres", "ana@sigae.edu.pe", "admin123456", UserRole.ENCARGADO, UserStatus.PENDING);
+    passwordResetRequestRepository.save(new PasswordResetRequest(
+        pendingUser,
+        "expired-invitation-hash",
+        java.time.Instant.now().minusSeconds(60),
+        PasswordResetPurpose.ACCOUNT_SETUP
+    ));
+    String accessToken = loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
+
+    mockMvc.perform(get("/api/users")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[?(@.email=='ana@sigae.edu.pe')].invitationStatus").value(org.hamcrest.Matchers.contains("EXPIRED")));
+  }
+
+  @Test
+  void adminCanCancelActiveInvitation() throws Exception {
+    doNothing().when(userInvitationMailService).sendInvitationMail(any(), anyString());
+    createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    Location lab = createLocation("Aula de Cómputo");
+    String accessToken = loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
+
+    mockMvc.perform(post("/api/users")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "fullName": "Ana Torres",
+                  "email": "ana@sigae.edu.pe",
+                  "role": "Encargado",
+                  "locationIds": ["%s"],
+                  "sendInvitation": true
+                }
+                """.formatted(lab.getId())))
+        .andExpect(status().isCreated());
+
+    String targetUserId = userRepository.findByEmailIgnoreCase("ana@sigae.edu.pe").orElseThrow().getId().toString();
+
+    mockMvc.perform(post("/api/users/{userId}/invitation/cancel", targetUserId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.invitationStatus").value("CANCELLED"));
+  }
+
+  @Test
+  void adminCanResendInvitationAndInvalidatesPreviousOne() throws Exception {
+    doNothing().when(userInvitationMailService).sendInvitationMail(any(), anyString());
+    createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    Location lab = createLocation("Aula de Cómputo");
+    String accessToken = loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
+
+    mockMvc.perform(post("/api/users")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "fullName": "Ana Torres",
+                  "email": "ana@sigae.edu.pe",
+                  "role": "Encargado",
+                  "locationIds": ["%s"],
+                  "sendInvitation": true
+                }
+                """.formatted(lab.getId())))
+        .andExpect(status().isCreated());
+
+    String targetUserId = userRepository.findByEmailIgnoreCase("ana@sigae.edu.pe").orElseThrow().getId().toString();
+
+    mockMvc.perform(post("/api/users/{userId}/invitation/resend", targetUserId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.invitationStatus").value("ACTIVE"));
+
+    org.assertj.core.api.Assertions.assertThat(passwordResetRequestRepository.findAll())
+        .hasSize(2)
+        .filteredOn(request -> request.getPurpose() == PasswordResetPurpose.ACCOUNT_SETUP)
+        .hasSize(2);
+    org.assertj.core.api.Assertions.assertThat(passwordResetRequestRepository.findAll())
+        .filteredOn(request -> request.getPurpose() == PasswordResetPurpose.ACCOUNT_SETUP && request.getCancelledAt() != null)
+        .hasSize(1);
   }
 }

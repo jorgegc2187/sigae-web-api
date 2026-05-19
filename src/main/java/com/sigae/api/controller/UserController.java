@@ -34,18 +34,18 @@ public class UserController {
 
   @GetMapping
   public List<UserResponse> list() {
-    return userService.findAll().stream().map(UserResponse::from).toList();
+    return userService.findAll().stream().map(this::toResponse).toList();
   }
 
   @GetMapping("/{userId}")
   public UserResponse getById(@PathVariable UUID userId) {
-    return UserResponse.from(userService.getById(userId));
+    return toResponse(userService.getById(userId));
   }
 
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
   public UserResponse create(@Valid @RequestBody CreateUserRequest request) {
-    return UserResponse.from(userService.create(request));
+    return toResponse(userService.create(request));
   }
 
   @PatchMapping("/{userId}")
@@ -54,7 +54,7 @@ public class UserController {
       @Valid @RequestBody UpdateUserRequest request,
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser
   ) {
-    return UserResponse.from(userService.update(userId, request, authenticatedUser));
+    return toResponse(userService.update(userId, request, authenticatedUser));
   }
 
   @PatchMapping("/{userId}/status")
@@ -63,6 +63,20 @@ public class UserController {
       @Valid @RequestBody UpdateUserStatusRequest request,
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser
   ) {
-    return UserResponse.from(userService.updateStatus(userId, request, authenticatedUser));
+    return toResponse(userService.updateStatus(userId, request, authenticatedUser));
+  }
+
+  @PostMapping("/{userId}/invitation/cancel")
+  public UserResponse cancelInvitation(@PathVariable UUID userId) {
+    return toResponse(userService.cancelInvitation(userId));
+  }
+
+  @PostMapping("/{userId}/invitation/resend")
+  public UserResponse resendInvitation(@PathVariable UUID userId) {
+    return toResponse(userService.resendInvitation(userId));
+  }
+
+  private UserResponse toResponse(com.sigae.api.model.entity.User user) {
+    return UserResponse.from(user, userService.getInvitationInfo(user));
   }
 }

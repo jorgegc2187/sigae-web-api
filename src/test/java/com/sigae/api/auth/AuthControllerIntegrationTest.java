@@ -1,6 +1,7 @@
 package com.sigae.api.auth;
 
 import com.sigae.api.model.entity.PasswordResetRequest;
+import com.sigae.api.model.entity.PasswordResetPurpose;
 import com.sigae.api.security.JwtService;
 import com.sigae.api.support.IntegrationTestSupport;
 import com.sigae.api.model.entity.UserRole;
@@ -203,7 +204,8 @@ class AuthControllerIntegrationTest extends IntegrationTestSupport {
     passwordResetRequestRepository.save(new PasswordResetRequest(
         user,
         tokenHashingService.sha256(rawToken),
-        Instant.now().plusSeconds(1800)
+        Instant.now().plusSeconds(1800),
+        PasswordResetPurpose.ACCOUNT_SETUP
     ));
 
     mockMvc.perform(post("/api/auth/reset-password")
@@ -222,6 +224,35 @@ class AuthControllerIntegrationTest extends IntegrationTestSupport {
         .get()
         .extracting(com.sigae.api.model.entity.User::getStatus)
         .isEqualTo(UserStatus.ACTIVE);
+  }
+
+  @Test
+  void resetPasswordDoesNotActivatePendingUserForForgotPasswordToken() throws Exception {
+    var user = createUser("Ana Torres", "ana@sigae.edu.pe", "admin123456", UserRole.ENCARGADO, UserStatus.PENDING);
+    String rawToken = "pending-forgot-token";
+    passwordResetRequestRepository.save(new PasswordResetRequest(
+        user,
+        tokenHashingService.sha256(rawToken),
+        Instant.now().plusSeconds(1800),
+        PasswordResetPurpose.PASSWORD_RESET
+    ));
+
+    mockMvc.perform(post("/api/auth/reset-password")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "token": "%s",
+                  "newPassword": "NuevaClave1!",
+                  "confirmPassword": "NuevaClave1!"
+                }
+                """.formatted(rawToken)))
+        .andExpect(status().isNoContent())
+        .andExpect(content().string(""));
+
+    org.assertj.core.api.Assertions.assertThat(userRepository.findById(user.getId()))
+        .get()
+        .extracting(com.sigae.api.model.entity.User::getStatus)
+        .isEqualTo(UserStatus.PENDING);
   }
 
   @Test

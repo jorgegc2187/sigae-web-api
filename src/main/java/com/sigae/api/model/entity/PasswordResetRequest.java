@@ -2,6 +2,8 @@ package com.sigae.api.model.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
@@ -22,15 +24,27 @@ public class PasswordResetRequest extends BaseEntity {
   @Column(nullable = false)
   private Instant expiresAt;
 
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false, length = 32)
+  private PasswordResetPurpose purpose;
+
   @Column
   private Instant usedAt;
+
+  @Column
+  private Instant cancelledAt;
 
   protected PasswordResetRequest() {}
 
   public PasswordResetRequest(User user, String tokenHash, Instant expiresAt) {
+    this(user, tokenHash, expiresAt, PasswordResetPurpose.PASSWORD_RESET);
+  }
+
+  public PasswordResetRequest(User user, String tokenHash, Instant expiresAt, PasswordResetPurpose purpose) {
     this.user = user;
     this.tokenHash = tokenHash;
     this.expiresAt = expiresAt;
+    this.purpose = purpose;
   }
 
   public User getUser() {
@@ -45,12 +59,24 @@ public class PasswordResetRequest extends BaseEntity {
     return expiresAt;
   }
 
+  public PasswordResetPurpose getPurpose() {
+    return purpose;
+  }
+
   public Instant getUsedAt() {
     return usedAt;
   }
 
+  public Instant getCancelledAt() {
+    return cancelledAt;
+  }
+
   public boolean isUsed() {
     return usedAt != null;
+  }
+
+  public boolean isCancelled() {
+    return cancelledAt != null;
   }
 
   public boolean isExpired() {
@@ -58,10 +84,16 @@ public class PasswordResetRequest extends BaseEntity {
   }
 
   public boolean isActive() {
-    return !isUsed() && !isExpired();
+    return !isUsed() && !isCancelled() && !isExpired();
   }
 
   public void markUsed() {
     usedAt = Instant.now();
+  }
+
+  public void markCancelled() {
+    if (cancelledAt == null) {
+      cancelledAt = Instant.now();
+    }
   }
 }
