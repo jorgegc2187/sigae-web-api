@@ -64,6 +64,7 @@ public abstract class IntegrationTestSupport {
     jdbcTemplate.update("delete from teacher");
     jdbcTemplate.update("delete from supplier");
     jdbcTemplate.update("delete from location");
+    jdbcTemplate.update("delete from institution_settings");
     jdbcTemplate.update("delete from asset_attribute_definition");
     jdbcTemplate.update("delete from asset_type");
     jdbcTemplate.update("delete from category");
