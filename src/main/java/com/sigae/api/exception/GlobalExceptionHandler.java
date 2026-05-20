@@ -11,6 +11,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -49,6 +50,20 @@ public class GlobalExceptionHandler {
   ResponseEntity<ApiError> handleBadRequest(BadRequestException exception, HttpServletRequest request) {
     return ResponseEntity.badRequest()
         .body(ApiError.of(400, "Bad Request", exception.getMessage(), request.getRequestURI()));
+  }
+
+  @ExceptionHandler(MaxUploadSizeExceededException.class)
+  ResponseEntity<ApiError> handleMaxUploadSizeExceeded(
+      MaxUploadSizeExceededException exception,
+      HttpServletRequest request
+  ) {
+    return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+        .body(ApiError.of(
+            413,
+            "Payload Too Large",
+            "Los archivos adjuntos exceden el tamaño máximo permitido para registrar el préstamo.",
+            request.getRequestURI()
+        ));
   }
 
   @ExceptionHandler(MailDeliveryException.class)
