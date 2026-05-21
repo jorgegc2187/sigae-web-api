@@ -225,6 +225,31 @@ class UserControllerIntegrationTest extends IntegrationTestSupport {
   }
 
   @Test
+  void adminCanChangeAnotherAdministratorsRole() throws Exception {
+    createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    createUser("Laura Ruiz", "laura@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    Location lab = createLocation("Aula de Cómputo");
+    String accessToken = loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
+    String targetUserId = userRepository.findByEmailIgnoreCase("laura@sigae.edu.pe").orElseThrow().getId().toString();
+
+    mockMvc.perform(patch("/api/users/{userId}", targetUserId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "fullName": "Laura Ruiz",
+                  "email": "laura@sigae.edu.pe",
+                  "role": "ENCARGADO",
+                  "locationIds": ["%s"]
+                }
+                """.formatted(lab.getId())))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.role").value("Encargado"))
+        .andExpect(jsonPath("$.locationIds.length()").value(1))
+        .andExpect(jsonPath("$.locationNames[0]").value("Aula de Cómputo"));
+  }
+
+  @Test
   void adminCannotDemoteLastActiveAdministrator() throws Exception {
     createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
     createUser("Laura Ruiz", "laura@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.INACTIVE);
