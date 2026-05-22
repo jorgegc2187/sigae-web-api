@@ -20,7 +20,10 @@ public record UserResponse(
     List<UUID> locationIds,
     List<String> locationNames,
     InvitationStatus invitationStatus,
-    Instant invitationExpiresAt
+    Instant invitationExpiresAt,
+    boolean mfaRequired,
+    boolean mfaEnabled,
+    Instant mfaEnabledAt
 ) {
 
   public static UserResponse from(User user) {
@@ -28,6 +31,10 @@ public record UserResponse(
   }
 
   public static UserResponse from(User user, UserInvitationInfo invitationInfo) {
+    return from(user, invitationInfo, UserMfaStatusResponse.disabled());
+  }
+
+  public static UserResponse from(User user, UserInvitationInfo invitationInfo, UserMfaStatusResponse mfaStatus) {
     List<Location> orderedLocations = user.getLocations().stream()
         .sorted(Comparator.comparing(Location::getName, String.CASE_INSENSITIVE_ORDER))
         .toList();
@@ -42,7 +49,10 @@ public record UserResponse(
         orderedLocations.stream().map(Location::getId).toList(),
         orderedLocations.stream().map(Location::getName).toList(),
         invitationInfo != null ? invitationInfo.status() : null,
-        invitationInfo != null ? invitationInfo.expiresAt() : null
+        invitationInfo != null ? invitationInfo.expiresAt() : null,
+        mfaStatus.mfaRequired(),
+        mfaStatus.mfaEnabled(),
+        mfaStatus.mfaEnabledAt()
     );
   }
 }

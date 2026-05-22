@@ -16,10 +16,17 @@ public record AuthUserResponse(
     UserRole role,
     UserStatus status,
     Instant lastAccessAt,
-    List<UUID> locationIds
+    List<UUID> locationIds,
+    boolean mfaRequired,
+    boolean mfaEnabled,
+    Instant mfaEnabledAt
 ) {
 
   public static AuthUserResponse from(User user) {
+    return from(user, UserMfaStatusResponse.disabled());
+  }
+
+  public static AuthUserResponse from(User user, UserMfaStatusResponse mfaStatus) {
     List<UUID> orderedLocationIds = user.getLocations().stream()
         .sorted(Comparator.comparing(Location::getName, String.CASE_INSENSITIVE_ORDER))
         .map(Location::getId)
@@ -32,7 +39,10 @@ public record AuthUserResponse(
         user.getRole(),
         user.getStatus(),
         user.getLastAccessAt(),
-        orderedLocationIds
+        orderedLocationIds,
+        mfaStatus.mfaRequired(),
+        mfaStatus.mfaEnabled(),
+        mfaStatus.mfaEnabledAt()
     );
   }
 }

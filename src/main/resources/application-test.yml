@@ -23,6 +23,11 @@ app:
       access-token-ttl: PT15M
       refresh-token-ttl: P1D
       password-reset-token-ttl: PT30M
+    mfa:
+      encryption-key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      challenge-ttl: PT5M
+      max-attempts: 5
+      issuer: SIGAE Test
     cors:
       allowed-origins: http://localhost:4200
   bootstrap:

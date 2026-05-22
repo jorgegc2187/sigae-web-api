@@ -3,8 +3,14 @@ package com.sigae.api.service;
 import com.sigae.api.model.dto.AuthResponse;
 import com.sigae.api.model.dto.AuthUserResponse;
 import com.sigae.api.model.dto.ForgotPasswordRequest;
+import com.sigae.api.model.dto.MfaChallengeResponse;
+import com.sigae.api.model.dto.MfaEnrollConfirmRequest;
+import com.sigae.api.model.dto.MfaEnrollStartRequest;
+import com.sigae.api.model.dto.MfaEnrollStartResponse;
+import com.sigae.api.model.dto.MfaVerifyRequest;
 import com.sigae.api.model.dto.ResetPasswordRequest;
 import com.sigae.api.exception.BadRequestException;
+import com.sigae.api.model.entity.MfaChallengePurpose;
 import com.sigae.api.model.entity.PasswordResetPurpose;
 import com.sigae.api.model.entity.PasswordResetRequest;
 import com.sigae.api.exception.NotFoundException;
@@ -33,6 +39,7 @@ public class AuthService {
   private final PasswordSetupTokenService passwordSetupTokenService;
   private final PasswordResetMailService passwordResetMailService;
   private final TokenHashingService tokenHashingService;
+  private final MfaService mfaService;
 
   public AuthService(
       UserService userService,
@@ -42,7 +49,8 @@ public class AuthService {
       OpaqueTokenService opaqueTokenService,
       PasswordSetupTokenService passwordSetupTokenService,
       PasswordResetMailService passwordResetMailService,
-      TokenHashingService tokenHashingService
+      TokenHashingService tokenHashingService,
+      MfaService mfaService
   ) {
     this.userService = userService;
     this.passwordEncoder = passwordEncoder;
@@ -52,10 +60,11 @@ public class AuthService {
     this.passwordSetupTokenService = passwordSetupTokenService;
     this.passwordResetMailService = passwordResetMailService;
     this.tokenHashingService = tokenHashingService;
+    this.mfaService = mfaService;
   }
 
   @Transactional
-  public AuthResponse login(String email, String rawPassword) {
+  public Object login(String email, String rawPassword) {
     User user;
     try {
       user = userService.getByEmailOrThrow(email);
@@ -63,6 +72,31 @@ public class AuthService {
       throw new BadCredentialsException("Credenciales inválidas.");
     }
     validateLogin(user, rawPassword);
+    if (mfaService.requiresEnrollment(user)) {
+      return mfaService.createLoginChallenge(user, MfaChallengePurpose.ENROLL, "MFA_ENROLL_REQUIRED");
+    }
+    if (mfaService.requiresChallenge(user)) {
+      return mfaService.createLoginChallenge(user, MfaChallengePurpose.LOGIN, "MFA_CHALLENGE_REQUIRED");
+    }
+    userService.markLoginSuccess(user);
+    return issueTokens(user);
+  }
+
+  @Transactional
+  public MfaEnrollStartResponse startMfaEnrollment(MfaEnrollStartRequest request) {
+    return mfaService.startEnrollment(request.challengeToken());
+  }
+
+  @Transactional
+  public AuthResponse confirmMfaEnrollment(MfaEnrollConfirmRequest request) {
+    User user = mfaService.confirmEnrollment(request.challengeToken(), request.code());
+    userService.markLoginSuccess(user);
+    return issueTokens(user);
+  }
+
+  @Transactional
+  public AuthResponse verifyMfa(MfaVerifyRequest request) {
+    User user = mfaService.verifyLogin(request.challengeToken(), request.code());
     userService.markLoginSuccess(user);
     return issueTokens(user);
   }
@@ -93,7 +127,8 @@ public class AuthService {
   }
 
   public AuthUserResponse me(AuthenticatedUser authenticatedUser) {
-    return AuthUserResponse.from(userService.getById(authenticatedUser.userId()));
+    User user = userService.getById(authenticatedUser.userId());
+    return AuthUserResponse.from(user, mfaService.getStatus(user));
   }
 
   @Transactional
@@ -158,7 +193,7 @@ public class AuthService {
         rawRefreshToken,
         "Bearer",
         jwtService.getAccessTokenExpiresInSeconds(),
-        AuthUserResponse.from(user)
+        AuthUserResponse.from(user, mfaService.getStatus(user))
     );
   }
 

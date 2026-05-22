@@ -68,6 +68,8 @@ public abstract class IntegrationTestSupport {
     jdbcTemplate.update("delete from asset_attribute_definition");
     jdbcTemplate.update("delete from asset_type");
     jdbcTemplate.update("delete from category");
+    jdbcTemplate.update("delete from mfa_challenge");
+    jdbcTemplate.update("delete from user_mfa_settings");
     refreshTokenRepository.deleteAll();
     passwordResetRequestRepository.deleteAll();
     userRepository.deleteAll();

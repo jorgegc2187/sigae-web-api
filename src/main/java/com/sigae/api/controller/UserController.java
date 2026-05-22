@@ -2,9 +2,11 @@ package com.sigae.api.controller;
 
 import com.sigae.api.model.dto.CreateUserRequest;
 import com.sigae.api.model.dto.UpdateUserRequest;
+import com.sigae.api.model.dto.UpdateUserMfaPolicyRequest;
 import com.sigae.api.model.dto.UpdateUserStatusRequest;
 import com.sigae.api.model.dto.UserResponse;
 import com.sigae.api.security.AuthenticatedUser;
+import com.sigae.api.service.MfaService;
 import com.sigae.api.service.UserService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -27,9 +29,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
   private final UserService userService;
+  private final MfaService mfaService;
 
-  public UserController(UserService userService) {
+  public UserController(UserService userService, MfaService mfaService) {
     this.userService = userService;
+    this.mfaService = mfaService;
   }
 
   @GetMapping
@@ -76,7 +80,22 @@ public class UserController {
     return toResponse(userService.resendInvitation(userId));
   }
 
+  @PatchMapping("/{userId}/mfa-policy")
+  public UserResponse updateMfaPolicy(
+      @PathVariable UUID userId,
+      @Valid @RequestBody UpdateUserMfaPolicyRequest request
+  ) {
+    mfaService.updatePolicy(userId, request.mfaRequired());
+    return toResponse(userService.getById(userId));
+  }
+
+  @PostMapping("/{userId}/mfa-reset")
+  public UserResponse resetMfa(@PathVariable UUID userId) {
+    mfaService.reset(userId);
+    return toResponse(userService.getById(userId));
+  }
+
   private UserResponse toResponse(com.sigae.api.model.entity.User user) {
-    return UserResponse.from(user, userService.getInvitationInfo(user));
+    return UserResponse.from(user, userService.getInvitationInfo(user), mfaService.getStatus(user));
   }
 }

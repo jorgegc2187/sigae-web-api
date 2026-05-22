@@ -6,6 +6,10 @@ import com.sigae.api.model.dto.ForgotPasswordRequest;
 import com.sigae.api.model.dto.ForgotPasswordResponse;
 import com.sigae.api.model.dto.LoginRequest;
 import com.sigae.api.model.dto.LogoutRequest;
+import com.sigae.api.model.dto.MfaEnrollConfirmRequest;
+import com.sigae.api.model.dto.MfaEnrollStartRequest;
+import com.sigae.api.model.dto.MfaEnrollStartResponse;
+import com.sigae.api.model.dto.MfaVerifyRequest;
 import com.sigae.api.model.dto.RefreshTokenRequest;
 import com.sigae.api.model.dto.ResetPasswordRequest;
 import com.sigae.api.model.dto.ValidateResetPasswordTokenRequest;
@@ -32,8 +36,23 @@ public class AuthController {
   }
 
   @PostMapping("/login")
-  public AuthResponse login(@Valid @RequestBody LoginRequest request) {
+  public Object login(@Valid @RequestBody LoginRequest request) {
     return authService.login(request.email(), request.password());
+  }
+
+  @PostMapping("/mfa/enroll/start")
+  public MfaEnrollStartResponse startMfaEnrollment(@Valid @RequestBody MfaEnrollStartRequest request) {
+    return authService.startMfaEnrollment(request);
+  }
+
+  @PostMapping("/mfa/enroll/confirm")
+  public AuthResponse confirmMfaEnrollment(@Valid @RequestBody MfaEnrollConfirmRequest request) {
+    return authService.confirmMfaEnrollment(request);
+  }
+
+  @PostMapping("/mfa/verify")
+  public AuthResponse verifyMfa(@Valid @RequestBody MfaVerifyRequest request) {
+    return authService.verifyMfa(request);
   }
 
   @PostMapping("/refresh")

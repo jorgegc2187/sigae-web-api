@@ -2,7 +2,10 @@ package com.sigae.api.auth;
 
 import com.sigae.api.model.entity.PasswordResetRequest;
 import com.sigae.api.model.entity.PasswordResetPurpose;
+import com.sigae.api.model.entity.UserMfaSettings;
+import com.sigae.api.repository.UserMfaSettingsRepository;
 import com.sigae.api.security.JwtService;
+import com.sigae.api.service.TotpService;
 import com.sigae.api.support.IntegrationTestSupport;
 import com.sigae.api.model.entity.UserRole;
 import com.sigae.api.model.entity.UserStatus;
@@ -24,6 +27,12 @@ class AuthControllerIntegrationTest extends IntegrationTestSupport {
 
   @Autowired
   private JwtService jwtService;
+
+  @Autowired
+  private UserMfaSettingsRepository userMfaSettingsRepository;
+
+  @Autowired
+  private TotpService totpService;
 
   private static final String FORGOT_PASSWORD_SUCCESS_MESSAGE =
       "Si el correo está registrado, recibirás instrucciones de recuperación en los próximos minutos.";
@@ -72,6 +81,113 @@ class AuthControllerIntegrationTest extends IntegrationTestSupport {
     String accessToken = objectMapper.readTree(response).get("accessToken").asText();
     org.assertj.core.api.Assertions.assertThat(jwtService.parseAccessToken(accessToken).locationIds())
         .containsExactly(location.getId().toString());
+  }
+
+  @Test
+  void loginReturnsMfaEnrollRequiredWhenPolicyRequiresEnrollment() throws Exception {
+    var user = createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    var settings = new UserMfaSettings(user);
+    settings.setMfaRequired(true);
+    userMfaSettingsRepository.save(settings);
+
+    mockMvc.perform(post("/api/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "email": "admin@sigae.edu.pe",
+                  "password": "admin123456"
+                }
+                """))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.type").value("MFA_ENROLL_REQUIRED"))
+        .andExpect(jsonPath("$.challengeToken").isNotEmpty())
+        .andExpect(jsonPath("$.expiresIn").value(300))
+        .andExpect(jsonPath("$.accessToken").doesNotExist());
+  }
+
+  @Test
+  void mfaEnrollmentAndVerificationIssueTokensAfterTotpValidation() throws Exception {
+    var user = createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    var settings = new UserMfaSettings(user);
+    settings.setMfaRequired(true);
+    userMfaSettingsRepository.save(settings);
+
+    String enrollChallenge = loginAndReadChallengeToken("admin@sigae.edu.pe", "admin123456", "MFA_ENROLL_REQUIRED");
+
+    String enrollStartResponse = mockMvc.perform(post("/api/auth/mfa/enroll/start")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "challengeToken": "%s"
+                }
+                """.formatted(enrollChallenge)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.otpauthUri").isNotEmpty())
+        .andExpect(jsonPath("$.manualKey").isNotEmpty())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    String manualKey = objectMapper.readTree(enrollStartResponse).get("manualKey").asText();
+    String enrollmentCode = totpService.currentCode(manualKey);
+
+    mockMvc.perform(post("/api/auth/mfa/enroll/confirm")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "challengeToken": "%s",
+                  "code": "%s"
+                }
+                """.formatted(enrollChallenge, enrollmentCode)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.type").value("AUTHENTICATED"))
+        .andExpect(jsonPath("$.accessToken").isNotEmpty())
+        .andExpect(jsonPath("$.user.mfaEnabled").value(true));
+
+    String loginChallenge = loginAndReadChallengeToken("admin@sigae.edu.pe", "admin123456", "MFA_CHALLENGE_REQUIRED");
+    String loginCode = totpService.currentCode(manualKey);
+
+    mockMvc.perform(post("/api/auth/mfa/verify")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "challengeToken": "%s",
+                  "code": "%s"
+                }
+                """.formatted(loginChallenge, loginCode)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.type").value("AUTHENTICATED"))
+        .andExpect(jsonPath("$.refreshToken").isNotEmpty());
+  }
+
+  @Test
+  void mfaChallengeRejectsInvalidTotpCode() throws Exception {
+    var user = createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    var settings = new UserMfaSettings(user);
+    settings.setMfaRequired(true);
+    userMfaSettingsRepository.save(settings);
+
+    String enrollChallenge = loginAndReadChallengeToken("admin@sigae.edu.pe", "admin123456", "MFA_ENROLL_REQUIRED");
+
+    mockMvc.perform(post("/api/auth/mfa/enroll/start")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "challengeToken": "%s"
+                }
+                """.formatted(enrollChallenge)))
+        .andExpect(status().isOk());
+
+    mockMvc.perform(post("/api/auth/mfa/enroll/confirm")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "challengeToken": "%s",
+                  "code": "000000"
+                }
+                """.formatted(enrollChallenge)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("El código de verificación no es válido o expiró."));
   }
 
   @Test
@@ -344,5 +460,23 @@ class AuthControllerIntegrationTest extends IntegrationTestSupport {
                 """.formatted(rawToken)))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.message").value("El enlace de recuperación es inválido o ya expiró."));
+  }
+
+  private String loginAndReadChallengeToken(String email, String password, String expectedType) throws Exception {
+    String response = mockMvc.perform(post("/api/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "email": "%s",
+                  "password": "%s"
+                }
+                """.formatted(email, password)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.type").value(expectedType))
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    return objectMapper.readTree(response).get("challengeToken").asText();
   }
 }

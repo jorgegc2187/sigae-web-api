@@ -13,6 +13,8 @@ app:
   security:
     jwt:
       secret: ${JWT_SECRET:dev-only-change-this-jwt-secret-with-at-least-32-characters}
+    mfa:
+      encryption-key: ${SIGAE_MFA_ENCRYPTION_KEY:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
     cors:
       allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:4200}
   bootstrap:
