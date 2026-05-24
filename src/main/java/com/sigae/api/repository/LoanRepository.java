@@ -1,6 +1,8 @@
 package com.sigae.api.repository;
 
 import com.sigae.api.model.entity.Loan;
+import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -54,4 +56,56 @@ public interface LoanRepository extends JpaRepository<Loan, UUID> {
         and loanAsset.asset.id in :assetIds
       """)
   List<Loan> findActiveLoansByAssetIds(@Param("assetIds") List<UUID> assetIds);
+
+  @Query("""
+      select count(loan)
+      from Loan loan
+      where loan.completedAt is null
+        and (:applyScope = false or loan.destinationLocation.id in :locationIds)
+      """)
+  long countActiveForDashboard(
+      @Param("applyScope") boolean applyScope,
+      @Param("locationIds") Collection<UUID> locationIds
+  );
+
+  @Query("""
+      select count(loan)
+      from Loan loan
+      where loan.completedAt is null
+        and loan.dueDate < :today
+        and (:applyScope = false or loan.destinationLocation.id in :locationIds)
+      """)
+  long countOverdueForDashboard(
+      @Param("today") LocalDate today,
+      @Param("applyScope") boolean applyScope,
+      @Param("locationIds") Collection<UUID> locationIds
+  );
+
+  @Query("""
+      select count(loan)
+      from Loan loan
+      where loan.completedAt is null
+        and loan.dueDate = :today
+        and (:applyScope = false or loan.destinationLocation.id in :locationIds)
+      """)
+  long countDueTodayForDashboard(
+      @Param("today") LocalDate today,
+      @Param("applyScope") boolean applyScope,
+      @Param("locationIds") Collection<UUID> locationIds
+  );
+
+  @Query("""
+      select distinct loan
+      from Loan loan
+      left join fetch loan.assets loanAsset
+      where loan.completedAt is null
+        and loan.dueDate <= :cutoff
+        and (:applyScope = false or loan.destinationLocation.id in :locationIds)
+      order by loan.dueDate asc, loan.createdAt asc
+      """)
+  List<Loan> findDashboardAlerts(
+      @Param("cutoff") LocalDate cutoff,
+      @Param("applyScope") boolean applyScope,
+      @Param("locationIds") Collection<UUID> locationIds
+  );
 }
