@@ -20,10 +20,12 @@ import com.sigae.api.model.entity.Asset;
 import com.sigae.api.model.entity.Loan;
 import com.sigae.api.repository.AssetRepository;
 import com.sigae.api.repository.LoanRepository;
+import jakarta.persistence.criteria.Predicate;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -35,6 +37,8 @@ import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -151,7 +155,39 @@ public class ReportService {
       LocalDate startDate,
       LocalDate endDate
   ) {
-    return assetRepository.findAssetsReport(categoryId, locationId, startDate, endDate);
+    return assetRepository.findAll(
+        assetReportSpecification(categoryId, locationId, startDate, endDate),
+        Sort.by(Sort.Direction.ASC, "code")
+    );
+  }
+
+  private Specification<Asset> assetReportSpecification(
+      UUID categoryId,
+      UUID locationId,
+      LocalDate startDate,
+      LocalDate endDate
+  ) {
+    return (root, query, criteriaBuilder) -> {
+      List<Predicate> predicates = new ArrayList<>();
+
+      if (categoryId != null) {
+        predicates.add(criteriaBuilder.equal(root.get("assetType").get("category").get("id"), categoryId));
+      }
+
+      if (locationId != null) {
+        predicates.add(criteriaBuilder.equal(root.get("location").get("id"), locationId));
+      }
+
+      if (startDate != null) {
+        predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("acquisitionDate"), startDate));
+      }
+
+      if (endDate != null) {
+        predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("acquisitionDate"), endDate));
+      }
+
+      return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
+    };
   }
 
   private void ensureValidDateRange(LocalDate startDate, LocalDate endDate) {

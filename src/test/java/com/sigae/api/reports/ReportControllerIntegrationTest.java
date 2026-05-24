@@ -37,6 +37,33 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
   }
 
   @Test
+  void adminCanListAssetReportWithOnlyDateRange() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID locationId = createReportLocation(accessToken);
+    createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-010", "2026-05-24");
+
+    mockMvc.perform(get("/api/reports/assets")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .param("startDate", "2026-05-23")
+            .param("endDate", "2026-05-31"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].code").value("CMP-2026-010"));
+  }
+
+  @Test
+  void assetReportRejectsInvalidDateRange() throws Exception {
+    String accessToken = createAdminAndLogin();
+
+    mockMvc.perform(get("/api/reports/assets")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .param("startDate", "2026-05-31")
+            .param("endDate", "2026-05-23"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("La fecha inicial no puede ser posterior a la fecha final."));
+  }
+
+  @Test
   void soloLecturaCanExportAssetReports() throws Exception {
     String adminToken = createAdminAndLogin();
     AssetCatalog catalog = createAssetCatalog(adminToken);
