@@ -3,6 +3,8 @@ package com.sigae.api.repository;
 import com.sigae.api.model.entity.User;
 import com.sigae.api.model.entity.UserRole;
 import com.sigae.api.model.entity.UserStatus;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -20,6 +22,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
   @EntityGraph(attributePaths = "locations")
   Optional<User> findByEmailIgnoreCase(String email);
+
+  @EntityGraph(attributePaths = "locations")
+  List<User> findAllByRole(UserRole role);
+
+  @EntityGraph(attributePaths = "locations")
+  List<User> findAllByIdIn(Collection<UUID> ids);
 
   boolean existsByEmailIgnoreCase(String email);
 
