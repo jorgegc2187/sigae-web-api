@@ -3,6 +3,8 @@ package com.sigae.api.service;
 import com.sigae.api.exception.ConflictException;
 import com.sigae.api.exception.NotFoundException;
 import com.sigae.api.model.dto.TeacherRequest;
+import com.sigae.api.model.dto.UpdateTeacherStatusRequest;
+import com.sigae.api.model.entity.CatalogStatus;
 import com.sigae.api.model.entity.Teacher;
 import com.sigae.api.repository.TeacherRepository;
 import java.util.List;
@@ -20,8 +22,12 @@ public class TeacherService {
     this.teacherRepository = teacherRepository;
   }
 
-  public List<Teacher> findAll() {
-    return teacherRepository.findAll();
+  public List<Teacher> findAll(CatalogStatus status) {
+    if (status == null) {
+      return teacherRepository.findAll();
+    }
+
+    return teacherRepository.findAllByStatus(status);
   }
 
   public Teacher getById(UUID id) {
@@ -51,6 +57,13 @@ public class TeacherService {
     teacher.setSpecialty(normalizeOptional(request.specialty()));
     teacher.setEmail(normalizeOptional(request.email()));
     teacher.setPhone(normalizeOptional(request.phone()));
+    teacher.setStatus(request.status());
+    return teacherRepository.save(teacher);
+  }
+
+  @Transactional
+  public Teacher updateStatus(UUID id, UpdateTeacherStatusRequest request) {
+    Teacher teacher = getById(id);
     teacher.setStatus(request.status());
     return teacherRepository.save(teacher);
   }

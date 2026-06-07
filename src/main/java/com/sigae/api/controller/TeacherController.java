@@ -2,6 +2,8 @@ package com.sigae.api.controller;
 
 import com.sigae.api.model.dto.TeacherRequest;
 import com.sigae.api.model.dto.TeacherResponse;
+import com.sigae.api.model.dto.UpdateTeacherStatusRequest;
+import com.sigae.api.model.entity.CatalogStatus;
 import com.sigae.api.service.TeacherService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
 @RequestMapping("/api/teachers")
@@ -28,8 +31,8 @@ public class TeacherController {
   }
 
   @GetMapping
-  public List<TeacherResponse> list() {
-    return teacherService.findAll().stream().map(TeacherResponse::from).toList();
+  public List<TeacherResponse> list(@RequestParam(required = false) CatalogStatus status) {
+    return teacherService.findAll(status).stream().map(TeacherResponse::from).toList();
   }
 
   @GetMapping("/{teacherId}")
@@ -51,5 +54,14 @@ public class TeacherController {
       @Valid @RequestBody TeacherRequest request
   ) {
     return TeacherResponse.from(teacherService.update(teacherId, request));
+  }
+
+  @PatchMapping("/{teacherId}/status")
+  @PreAuthorize("hasRole('ADMINISTRADOR')")
+  public TeacherResponse updateStatus(
+      @PathVariable UUID teacherId,
+      @Valid @RequestBody UpdateTeacherStatusRequest request
+  ) {
+    return TeacherResponse.from(teacherService.updateStatus(teacherId, request));
   }
 }
