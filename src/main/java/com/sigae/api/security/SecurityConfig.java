@@ -56,7 +56,9 @@ public class SecurityConfig {
                 "/api/auth/reset-password",
                 "/api/auth/reset-password/validate",
                 "/api/settings/branding",
-                "/api/settings/logo"
+                "/api/settings/logo",
+                "/ws",
+                "/ws/**"
             ).permitAll()
             .anyRequest().authenticated())
         .httpBasic(AbstractHttpConfigurer::disable)

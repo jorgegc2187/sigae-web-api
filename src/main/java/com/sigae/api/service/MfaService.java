@@ -37,6 +37,7 @@ public class MfaService {
   private final TotpService totpService;
   private final SecurityProperties securityProperties;
   private final Clock clock;
+  private final LiveNotificationPublisher liveNotificationPublisher;
 
   public MfaService(
       UserService userService,
@@ -48,7 +49,8 @@ public class MfaService {
       MfaSecretCipher secretCipher,
       TotpService totpService,
       SecurityProperties securityProperties,
-      Clock clock
+      Clock clock,
+      LiveNotificationPublisher liveNotificationPublisher
   ) {
     this.userService = userService;
     this.settingsRepository = settingsRepository;
@@ -60,6 +62,7 @@ public class MfaService {
     this.totpService = totpService;
     this.securityProperties = securityProperties;
     this.clock = clock;
+    this.liveNotificationPublisher = liveNotificationPublisher;
   }
 
   public UserMfaStatusResponse getStatus(User user) {
@@ -121,6 +124,7 @@ public class MfaService {
     challenge.markConsumed();
     challengeRepository.save(challenge);
     invalidateOpenChallenges(challenge.getUser().getId());
+    liveNotificationPublisher.publishAdminInvalidation();
     return challenge.getUser();
   }
 
@@ -151,6 +155,7 @@ public class MfaService {
       revokeRefreshTokens(userId);
     }
     settingsRepository.save(settings);
+    liveNotificationPublisher.publishAdminInvalidation();
     return toStatus(settings);
   }
 
@@ -162,6 +167,7 @@ public class MfaService {
     settingsRepository.save(settings);
     invalidateOpenChallenges(userId);
     revokeRefreshTokens(userId);
+    liveNotificationPublisher.publishAdminInvalidation();
     return toStatus(settings);
   }
 

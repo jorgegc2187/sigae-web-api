@@ -36,19 +36,22 @@ public class UserService {
   private final PasswordEncoder passwordEncoder;
   private final PasswordSetupTokenService passwordSetupTokenService;
   private final UserInvitationMailService userInvitationMailService;
+  private final LiveNotificationPublisher liveNotificationPublisher;
 
   public UserService(
       UserRepository userRepository,
       LocationRepository locationRepository,
       PasswordEncoder passwordEncoder,
       PasswordSetupTokenService passwordSetupTokenService,
-      UserInvitationMailService userInvitationMailService
+      UserInvitationMailService userInvitationMailService,
+      LiveNotificationPublisher liveNotificationPublisher
   ) {
     this.userRepository = userRepository;
     this.locationRepository = locationRepository;
     this.passwordEncoder = passwordEncoder;
     this.passwordSetupTokenService = passwordSetupTokenService;
     this.userInvitationMailService = userInvitationMailService;
+    this.liveNotificationPublisher = liveNotificationPublisher;
   }
 
   @Transactional
@@ -71,6 +74,7 @@ public class UserService {
     if (request.shouldSendInvitation()) {
       String rawToken = passwordSetupTokenService.issueAccountSetupToken(createdUser);
       userInvitationMailService.sendInvitationMail(createdUser, rawToken);
+      liveNotificationPublisher.publishAdminInvalidation();
     }
 
     return createdUser;
@@ -104,6 +108,7 @@ public class UserService {
     User user = getById(userId);
     ensurePendingUserForInvitationAction(user);
     passwordSetupTokenService.cancelInvitation(user.getId());
+    liveNotificationPublisher.publishAdminInvalidation();
     return user;
   }
 
@@ -116,6 +121,7 @@ public class UserService {
     }
     String rawToken = passwordSetupTokenService.issueAccountSetupToken(user);
     userInvitationMailService.sendInvitationMail(user, rawToken);
+    liveNotificationPublisher.publishAdminInvalidation();
     return user;
   }
 

@@ -40,6 +40,7 @@ public class AuthService {
   private final PasswordResetMailService passwordResetMailService;
   private final TokenHashingService tokenHashingService;
   private final MfaService mfaService;
+  private final LiveNotificationPublisher liveNotificationPublisher;
 
   public AuthService(
       UserService userService,
@@ -50,7 +51,8 @@ public class AuthService {
       PasswordSetupTokenService passwordSetupTokenService,
       PasswordResetMailService passwordResetMailService,
       TokenHashingService tokenHashingService,
-      MfaService mfaService
+      MfaService mfaService,
+      LiveNotificationPublisher liveNotificationPublisher
   ) {
     this.userService = userService;
     this.passwordEncoder = passwordEncoder;
@@ -61,6 +63,7 @@ public class AuthService {
     this.passwordResetMailService = passwordResetMailService;
     this.tokenHashingService = tokenHashingService;
     this.mfaService = mfaService;
+    this.liveNotificationPublisher = liveNotificationPublisher;
   }
 
   @Transactional
@@ -154,11 +157,16 @@ public class AuthService {
     PasswordResetRequest resetRequest = passwordSetupTokenService.consumeValidToken(request.token());
     User user = resetRequest.getUser();
     user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+    boolean activatedPendingAccount = false;
     if (resetRequest.getPurpose() == PasswordResetPurpose.ACCOUNT_SETUP && user.getStatus() == UserStatus.PENDING) {
       user.setStatus(UserStatus.ACTIVE);
+      activatedPendingAccount = true;
     }
     resetRequest.markUsed();
     revokeAllRefreshTokens(user.getId());
+    if (activatedPendingAccount) {
+      liveNotificationPublisher.publishAdminInvalidation();
+    }
   }
 
   private void validateLogin(User user, String rawPassword) {

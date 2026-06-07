@@ -54,6 +54,7 @@ public class LoanService {
   private final AssetRepository assetRepository;
   private final AssetTraceabilityRepository traceabilityRepository;
   private final UserRepository userRepository;
+  private final LiveNotificationPublisher liveNotificationPublisher;
 
   public LoanService(
       LoanRepository loanRepository,
@@ -62,7 +63,8 @@ public class LoanService {
       LocationRepository locationRepository,
       AssetRepository assetRepository,
       AssetTraceabilityRepository traceabilityRepository,
-      UserRepository userRepository
+      UserRepository userRepository,
+      LiveNotificationPublisher liveNotificationPublisher
   ) {
     this.loanRepository = loanRepository;
     this.attachmentRepository = attachmentRepository;
@@ -71,6 +73,7 @@ public class LoanService {
     this.assetRepository = assetRepository;
     this.traceabilityRepository = traceabilityRepository;
     this.userRepository = userRepository;
+    this.liveNotificationPublisher = liveNotificationPublisher;
   }
 
   public List<LoanSummaryResponse> findAll(String search, String status) {
@@ -128,6 +131,7 @@ public class LoanService {
         "Docente: %s".formatted(teacher.getFullName()),
         user
     )));
+    liveNotificationPublisher.publishGlobalInvalidation();
 
     return getDetail(saved.getId());
   }
@@ -151,6 +155,7 @@ public class LoanService {
         "Devolución registrada.",
         user
     )));
+    liveNotificationPublisher.publishGlobalInvalidation();
 
     return getDetail(saved.getId());
   }

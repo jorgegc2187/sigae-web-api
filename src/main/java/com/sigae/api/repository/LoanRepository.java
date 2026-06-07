@@ -108,4 +108,19 @@ public interface LoanRepository extends JpaRepository<Loan, UUID> {
       @Param("applyScope") boolean applyScope,
       @Param("locationIds") Collection<UUID> locationIds
   );
+
+  @Query("""
+      select distinct loan
+      from Loan loan
+      left join fetch loan.assets loanAsset
+      where loan.completedAt is null
+        and loan.dueDate <= :today
+        and (:applyScope = false or loan.destinationLocation.id in :locationIds)
+      order by loan.dueDate asc, loan.createdAt asc
+      """)
+  List<Loan> findLiveAttentionNotifications(
+      @Param("today") LocalDate today,
+      @Param("applyScope") boolean applyScope,
+      @Param("locationIds") Collection<UUID> locationIds
+  );
 }
