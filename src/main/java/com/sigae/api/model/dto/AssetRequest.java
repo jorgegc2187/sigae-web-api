@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.UUID;
 
 public record AssetRequest(
-    @NotBlank @Size(max = 30) String code,
+    @Size(max = 30) String code,
     @NotBlank @Size(max = 160) String name,
     @NotNull UUID assetTypeId,
     @NotNull UUID locationId,

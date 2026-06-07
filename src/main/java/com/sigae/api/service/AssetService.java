@@ -1,5 +1,6 @@
 package com.sigae.api.service;
 
+import com.sigae.api.exception.BadRequestException;
 import com.sigae.api.exception.ConflictException;
 import com.sigae.api.exception.NotFoundException;
 import com.sigae.api.model.dto.AssetAttributeValueRequest;
@@ -23,6 +24,7 @@ import com.sigae.api.repository.SupplierRepository;
 import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -34,6 +36,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional(readOnly = true)
 public class AssetService {
+  private static final Map<String, String> TYPE_PREFIXES = buildTypePrefixes();
+  private static final Map<String, String> CATEGORY_PREFIXES = buildCategoryPrefixes();
 
   private final AssetRepository assetRepository;
   private final AssetTypeRepository assetTypeRepository;
@@ -101,22 +105,24 @@ public class AssetService {
 
   @Transactional
   public Asset create(AssetRequest request) {
-    ensureCodeAvailable(request.code(), null);
-    ensureBarcodeAvailable(request.barcode(), null);
-
     AssetType assetType = getAssetType(request.assetTypeId());
     Location location = getLocation(request.locationId());
     Supplier supplier = getSupplierOrNull(request.supplierId());
+    String resolvedCode = resolveCodeForCreate(request, assetType);
+    String resolvedBarcode = resolveBarcodeForCreate(request, resolvedCode);
+
+    ensureCodeAvailable(resolvedCode, null);
+    ensureBarcodeAvailable(resolvedBarcode, null);
 
     Asset asset = new Asset(
-        request.code().trim(),
+        resolvedCode,
         request.name().trim(),
         assetType,
         location,
         supplier,
         request.condition()
     );
-    applyOptionalFields(asset, request);
+    applyOptionalFields(asset, request, resolvedBarcode);
     asset.replaceAttributeValues(buildAttributeValues(assetType, request.attributeValues()));
 
     Asset saved = assetRepository.save(asset);
@@ -135,22 +141,24 @@ public class AssetService {
   @Transactional
   public Asset update(UUID id, AssetRequest request) {
     Asset asset = getById(id);
-    ensureCodeAvailable(request.code(), asset.getId());
-    ensureBarcodeAvailable(request.barcode(), asset.getId());
-
     AssetCondition previousCondition = asset.getCondition();
     UUID previousLocationId = asset.getLocation().getId();
 
     AssetType assetType = getAssetType(request.assetTypeId());
     Location location = getLocation(request.locationId());
+    String resolvedCode = requireExistingCode(request.code());
+    String resolvedBarcode = resolveBarcodeForUpdate(request, asset, resolvedCode);
 
-    asset.setCode(request.code().trim());
+    ensureCodeAvailable(resolvedCode, asset.getId());
+    ensureBarcodeAvailable(resolvedBarcode, asset.getId());
+
+    asset.setCode(resolvedCode);
     asset.setName(request.name().trim());
     asset.setAssetType(assetType);
     asset.setLocation(location);
     asset.setSupplier(getSupplierOrNull(request.supplierId()));
     asset.setCondition(request.condition());
-    applyOptionalFields(asset, request);
+    applyOptionalFields(asset, request, resolvedBarcode);
     asset.replaceAttributeValues(buildAttributeValues(assetType, request.attributeValues()));
 
     Asset saved = assetRepository.save(asset);
@@ -209,9 +217,9 @@ public class AssetService {
         .orElseThrow(() -> new NotFoundException("Proveedor no encontrado."));
   }
 
-  private void applyOptionalFields(Asset asset, AssetRequest request) {
+  private void applyOptionalFields(Asset asset, AssetRequest request, String resolvedBarcode) {
     asset.setSerialNumber(normalizeOptional(request.serialNumber()));
-    asset.setBarcode(normalizeOptional(request.barcode()));
+    asset.setBarcode(resolvedBarcode);
     asset.setAcquisitionDate(request.acquisitionDate());
     asset.setNotes(normalizeOptional(request.notes()));
   }
@@ -261,6 +269,125 @@ public class AssetService {
 
   private String normalizeOptional(String value) {
     return value == null || value.isBlank() ? null : value.trim();
+  }
+
+  private String resolveCodeForCreate(AssetRequest request, AssetType assetType) {
+    String providedCode = normalizeOptional(request.code());
+    if (providedCode != null) {
+      return providedCode;
+    }
+
+    return generateCode(assetType);
+  }
+
+  private String requireExistingCode(String code) {
+    String normalizedCode = normalizeOptional(code);
+    if (normalizedCode == null) {
+      throw new BadRequestException("El código del activo es obligatorio.");
+    }
+
+    return normalizedCode;
+  }
+
+  private String resolveBarcodeForCreate(AssetRequest request, String resolvedCode) {
+    String normalizedBarcode = normalizeOptional(request.barcode());
+    return normalizedBarcode != null ? normalizedBarcode : resolvedCode;
+  }
+
+  private String resolveBarcodeForUpdate(AssetRequest request, Asset asset, String resolvedCode) {
+    if (request.barcode() != null) {
+      return resolveBarcodeForCreate(request, resolvedCode);
+    }
+
+    String existingBarcode = normalizeOptional(asset.getBarcode());
+    return existingBarcode != null ? existingBarcode : resolvedCode;
+  }
+
+  private String generateCode(AssetType assetType) {
+    String prefix = resolvePrefix(assetType);
+    int year = java.time.LocalDate.now().getYear();
+    String key = "%s-%s-".formatted(prefix, year);
+
+    int nextSequence = assetRepository.findAllByCodeStartingWithIgnoreCase(key).stream()
+        .map(Asset::getCode)
+        .map(code -> extractSequence(code, key))
+        .max(Integer::compareTo)
+        .orElse(0) + 1;
+
+    return "%s-%s-%03d".formatted(prefix, year, nextSequence);
+  }
+
+  private int extractSequence(String code, String key) {
+    if (code == null || code.length() <= key.length()) {
+      return 0;
+    }
+
+    try {
+      return Integer.parseInt(code.substring(key.length()));
+    } catch (NumberFormatException ignored) {
+      return 0;
+    }
+  }
+
+  private String resolvePrefix(AssetType assetType) {
+    String typeName = assetType.getName().trim().toLowerCase(Locale.ROOT);
+    if (TYPE_PREFIXES.containsKey(typeName)) {
+      return TYPE_PREFIXES.get(typeName);
+    }
+
+    String categoryName = assetType.getCategory().getName().trim().toLowerCase(Locale.ROOT);
+    if (CATEGORY_PREFIXES.containsKey(categoryName)) {
+      return CATEGORY_PREFIXES.get(categoryName);
+    }
+
+    String normalized = assetType.getName().replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
+    if (normalized.length() >= 3) {
+      return normalized.substring(0, 3);
+    }
+
+    return (normalized + "AST").substring(0, 3);
+  }
+
+  private static Map<String, String> buildTypePrefixes() {
+    Map<String, String> prefixes = new HashMap<>();
+    prefixes.put("laptop", "CMP");
+    prefixes.put("desktop", "DES");
+    prefixes.put("proyector", "PRY");
+    prefixes.put("router", "NET");
+    prefixes.put("webcam", "VID");
+    prefixes.put("impresora", "IMP");
+    prefixes.put("tablet", "TAB");
+    prefixes.put("monitor", "MON");
+    prefixes.put("micrófono", "AUD");
+    prefixes.put("microfono", "AUD");
+    prefixes.put("cable hdmi", "ACC");
+    prefixes.put("puntero láser", "ACC");
+    prefixes.put("puntero laser", "ACC");
+    prefixes.put("escritorio", "MOB");
+    prefixes.put("silla", "MOB");
+    prefixes.put("archivador", "MOB");
+    prefixes.put("estante", "MOB");
+    prefixes.put("microscopio", "LAB");
+    prefixes.put("balanza digital", "LAB");
+    prefixes.put("kit de química", "LAB");
+    prefixes.put("kit de quimica", "LAB");
+    prefixes.put("fuente de poder", "LAB");
+    prefixes.put("balón", "DEP");
+    prefixes.put("balon", "DEP");
+    prefixes.put("cono", "DEP");
+    prefixes.put("colchoneta", "DEP");
+    prefixes.put("red", "DEP");
+    return prefixes;
+  }
+
+  private static Map<String, String> buildCategoryPrefixes() {
+    Map<String, String> prefixes = new HashMap<>();
+    prefixes.put("tecnología", "TEC");
+    prefixes.put("tecnologia", "TEC");
+    prefixes.put("mobiliario", "MOB");
+    prefixes.put("laboratorio", "LAB");
+    prefixes.put("deportes", "DEP");
+    return prefixes;
   }
 
   private String normalizeSearch(String value) {

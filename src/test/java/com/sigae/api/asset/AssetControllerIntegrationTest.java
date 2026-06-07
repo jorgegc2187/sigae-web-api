@@ -115,6 +115,31 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(status().isNotFound());
   }
 
+  @Test
+  void createWithoutCodeGeneratesOperationalCode() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+
+    mockMvc.perform(post("/api/assets")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "name": "Laptop Lenovo ThinkPad",
+                  "assetTypeId": "%s",
+                  "locationId": "%s",
+                  "condition": "Bueno",
+                  "acquisitionDate": "2026-01-15",
+                  "notes": "Registro agrupado de inventario",
+                  "attributeValues": []
+                }
+                """.formatted(catalog.assetTypeId(), locationId)))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.matchesPattern("CMP-\\d{4}-\\d{3}")))
+        .andExpect(jsonPath("$.barcode").isNotEmpty());
+  }
+
   private String createAdminAndLogin() throws Exception {
     createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
     return loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
