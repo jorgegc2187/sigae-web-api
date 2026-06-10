@@ -1,5 +1,6 @@
 package com.sigae.api.model.dto;
 
+import com.sigae.api.model.entity.AssetCondition;
 import com.sigae.api.model.entity.Loan;
 import com.sigae.api.model.entity.LoanAsset;
 
@@ -21,8 +22,22 @@ final class LoanResponseMapper {
         loanAsset.getAssetCodeSnapshot(),
         loanAsset.getAssetNameSnapshot(),
         loanAsset.getAssetCategorySnapshot(),
-        loanAsset.getLoan().getCompletedAt() == null ? "En préstamo" : "Operativo"
+        loanAsset.getLoan().getCompletedAt() == null ? "En préstamo" : conditionLabel(loanAsset.getAsset().getCondition())
     );
+  }
+
+  private static String conditionLabel(AssetCondition condition) {
+    if (condition == null) {
+      return "Operativo";
+    }
+
+    return switch (condition) {
+      case BUENO -> "Operativo";
+      case REGULAR -> "Regular";
+      case MALO -> "Malo";
+      case MANTENIMIENTO -> "Mantenimiento";
+      case DADO_DE_BAJA -> "Dado de baja";
+    };
   }
 
   private static String buildInitials(String fullName) {

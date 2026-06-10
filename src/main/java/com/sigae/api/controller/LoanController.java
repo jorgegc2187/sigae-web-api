@@ -3,6 +3,7 @@ package com.sigae.api.controller;
 import com.sigae.api.model.dto.CreateLoanPayload;
 import com.sigae.api.model.dto.LoanAttachmentFile;
 import com.sigae.api.model.dto.LoanDetailResponse;
+import com.sigae.api.model.dto.LoanReturnRequest;
 import com.sigae.api.model.dto.LoanSummaryResponse;
 import com.sigae.api.security.AuthenticatedUser;
 import com.sigae.api.service.LoanService;
@@ -18,6 +19,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -65,9 +67,10 @@ public class LoanController {
   @PreAuthorize("hasAnyRole('ADMINISTRADOR', 'ENCARGADO')")
   public LoanDetailResponse returnLoan(
       @PathVariable UUID loanId,
+      @RequestBody(required = false) LoanReturnRequest request,
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser
   ) {
-    return loanService.returnLoan(loanId, authenticatedUser);
+    return loanService.returnLoan(loanId, request, authenticatedUser);
   }
 
   @GetMapping("/{loanId}/attachments/{attachmentId}")

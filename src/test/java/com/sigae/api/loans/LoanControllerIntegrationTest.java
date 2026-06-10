@@ -10,6 +10,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -121,6 +122,137 @@ class LoanControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(header().string(HttpHeaders.CONTENT_TYPE, containsString(MediaType.APPLICATION_PDF_VALUE)))
         .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("attachment")))
         .andExpect(content().bytes(attachmentBytes));
+  }
+
+  @Test
+  void returnLoanWithoutBodyKeepsCompatibility() throws Exception {
+    String accessToken = createAdminAndLogin();
+    TeacherFixture teacher = createTeacher(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Robótica");
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID assetId = createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-011", "Laptop HP ProBook");
+    UUID loanId = createLoan(accessToken, teacher.id(), locationId, assetId);
+
+    mockMvc.perform(post("/api/loans/{loanId}/return", loanId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("Devuelto"))
+        .andExpect(jsonPath("$.assets[0].status").value("Operativo"));
+  }
+
+  @Test
+  void returnLoanWithIncidentUpdatesAssetConditionAndTraceability() throws Exception {
+    String accessToken = createAdminAndLogin();
+    TeacherFixture teacher = createTeacher(accessToken);
+    UUID locationId = createLocation(accessToken, "Sala de Innovación");
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID assetId = createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-012", "Proyector Epson");
+    UUID loanId = createLoan(accessToken, teacher.id(), locationId, assetId);
+
+    mockMvc.perform(post("/api/loans/{loanId}/return", loanId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "assetReviews": [
+                    {
+                      "assetId": "%s",
+                      "hasIncident": true,
+                      "incidentDescription": "Lente con fisura visible",
+                      "conditionAfterReturn": "Malo"
+                    }
+                  ]
+                }
+                """.formatted(assetId)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("Devuelto"))
+        .andExpect(jsonPath("$.assets[0].status").value("Malo"))
+        .andExpect(jsonPath("$.activities[*].title").value(hasItem("Incidencia registrada")));
+
+    mockMvc.perform(get("/api/assets/{assetId}", assetId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.condition").value("Malo"));
+
+    mockMvc.perform(get("/api/assets/{assetId}/traceability", assetId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[*].eventType").value(hasItem("RETURNED")))
+        .andExpect(jsonPath("$[*].eventType").value(hasItem("CONDITION_CHANGED")))
+        .andExpect(jsonPath("$[*].reason").value(hasItem("Lente con fisura visible")));
+  }
+
+  @Test
+  void returnLoanWithIncidentWithoutDescriptionReturnsBadRequest() throws Exception {
+    String accessToken = createAdminAndLogin();
+    TeacherFixture teacher = createTeacher(accessToken);
+    UUID locationId = createLocation(accessToken, "Aula de Medios");
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID assetId = createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-013", "Tablet Samsung");
+    UUID loanId = createLoan(accessToken, teacher.id(), locationId, assetId);
+
+    mockMvc.perform(post("/api/loans/{loanId}/return", loanId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "assetReviews": [
+                    {
+                      "assetId": "%s",
+                      "hasIncident": true,
+                      "incidentDescription": "   ",
+                      "conditionAfterReturn": "Malo"
+                    }
+                  ]
+                }
+                """.formatted(assetId)))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void returnLoanWithAssetOutsideLoanReturnsBadRequest() throws Exception {
+    String accessToken = createAdminAndLogin();
+    TeacherFixture teacher = createTeacher(accessToken);
+    UUID locationId = createLocation(accessToken, "Depósito Técnico");
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID assetId = createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-014", "Monitor LG");
+    UUID outsideAssetId = createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-015", "Monitor Samsung");
+    UUID loanId = createLoan(accessToken, teacher.id(), locationId, assetId);
+
+    mockMvc.perform(post("/api/loans/{loanId}/return", loanId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "assetReviews": [
+                    {
+                      "assetId": "%s",
+                      "hasIncident": true,
+                      "incidentDescription": "No corresponde al préstamo",
+                      "conditionAfterReturn": "Regular"
+                    }
+                  ]
+                }
+                """.formatted(outsideAssetId)))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void returnAlreadyReturnedLoanReturnsConflict() throws Exception {
+    String accessToken = createAdminAndLogin();
+    TeacherFixture teacher = createTeacher(accessToken);
+    UUID locationId = createLocation(accessToken, "Biblioteca");
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID assetId = createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-016", "Laptop Acer");
+    UUID loanId = createLoan(accessToken, teacher.id(), locationId, assetId);
+
+    mockMvc.perform(post("/api/loans/{loanId}/return", loanId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk());
+
+    mockMvc.perform(post("/api/loans/{loanId}/return", loanId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isConflict());
   }
 
   private String createAdminAndLogin() throws Exception {
@@ -237,6 +369,40 @@ class LoanControllerIntegrationTest extends IntegrationTestSupport {
                   "attributeValues": []
                 }
                 """.formatted(code, name, assetTypeId, locationId, code, code)))
+        .andExpect(status().isCreated())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    return UUID.fromString(objectMapper.readTree(response).get("id").asText());
+  }
+
+  private UUID createLoan(
+      String accessToken,
+      UUID teacherId,
+      UUID locationId,
+      UUID assetId
+  ) throws Exception {
+    MockMultipartFile payload = new MockMultipartFile(
+        "payload",
+        "",
+        MediaType.APPLICATION_JSON_VALUE,
+        """
+            {
+              "teacherId": "%s",
+              "destinationLocationId": "%s",
+              "loanDate": "2026-05-14",
+              "dueDate": "2026-05-20",
+              "notes": "Préstamo para devolución",
+              "assetIds": ["%s"],
+              "attachmentSources": []
+            }
+            """.formatted(teacherId, locationId, assetId).getBytes(StandardCharsets.UTF_8)
+    );
+
+    String response = mockMvc.perform(multipart("/api/loans")
+            .file(payload)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated())
         .andReturn()
         .getResponse()

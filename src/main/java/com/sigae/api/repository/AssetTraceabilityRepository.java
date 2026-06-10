@@ -14,6 +14,9 @@ public interface AssetTraceabilityRepository extends JpaRepository<AssetTraceabi
   @EntityGraph(attributePaths = {"asset", "user"})
   List<AssetTraceability> findByAssetIdOrderByOccurredAtDesc(UUID assetId);
 
+  @EntityGraph(attributePaths = {"asset", "user"})
+  List<AssetTraceability> findByAssetIdInOrderByOccurredAtDesc(Collection<UUID> assetIds);
+
   @Query("""
       select traceability
       from AssetTraceability traceability

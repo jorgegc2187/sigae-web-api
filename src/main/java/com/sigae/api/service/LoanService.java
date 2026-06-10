@@ -7,6 +7,8 @@ import com.sigae.api.model.dto.CreateLoanPayload;
 import com.sigae.api.model.dto.LoanActivityResponse;
 import com.sigae.api.model.dto.LoanAttachmentFile;
 import com.sigae.api.model.dto.LoanDetailResponse;
+import com.sigae.api.model.dto.LoanReturnAssetReviewRequest;
+import com.sigae.api.model.dto.LoanReturnRequest;
 import com.sigae.api.model.dto.LoanStatusResponse;
 import com.sigae.api.model.dto.LoanSummaryResponse;
 import com.sigae.api.model.entity.Asset;
@@ -30,10 +32,14 @@ import com.sigae.api.repository.UserRepository;
 import com.sigae.api.security.AuthenticatedUser;
 import java.io.IOException;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.http.MediaType;
@@ -137,24 +143,17 @@ public class LoanService {
   }
 
   @Transactional
-  public LoanDetailResponse returnLoan(UUID id, AuthenticatedUser authenticatedUser) {
+  public LoanDetailResponse returnLoan(UUID id, LoanReturnRequest request, AuthenticatedUser authenticatedUser) {
     Loan loan = getById(id);
     if (loan.getCompletedAt() != null) {
       throw new ConflictException("El préstamo ya fue devuelto.");
     }
 
     User user = findUser(authenticatedUser);
+    Map<UUID, LoanReturnAssetReviewRequest> reviewsByAssetId = validateReturnRequest(loan, request);
     loan.markReturned();
     Loan saved = loanRepository.save(loan);
-    saved.getAssets().forEach(loanAsset -> traceabilityRepository.save(new AssetTraceability(
-        loanAsset.getAsset(),
-        TraceabilityEventType.RETURNED,
-        "Activo devuelto del préstamo %s.".formatted(saved.getCode()),
-        saved.getDestinationNameSnapshot(),
-        loanAsset.getAsset().getLocation().getName(),
-        "Devolución registrada.",
-        user
-    )));
+    saved.getAssets().forEach(loanAsset -> registerReturnTraceability(saved, loanAsset, reviewsByAssetId.get(loanAsset.getAsset().getId()), user));
     liveNotificationPublisher.publishGlobalInvalidation();
 
     return getDetail(saved.getId());
@@ -282,8 +281,12 @@ public class LoanService {
         "Sistema",
         loan.getCreatedAt()
     );
+
+    List<LoanActivityResponse> activities = new ArrayList<>();
+    activities.add(created);
+
     if (loan.getCompletedAt() == null) {
-      return List.of(created);
+      return activities;
     }
 
     LoanActivityResponse returned = LoanActivityResponse.of(
@@ -293,8 +296,115 @@ public class LoanService {
         "Sistema",
         loan.getCompletedAt()
     );
-    return List.of(created, returned).stream()
+    activities.add(returned);
+    activities.addAll(buildIncidentActivities(loan));
+
+    return activities.stream()
         .sorted(Comparator.comparing(LoanActivityResponse::timestamp).reversed())
+        .toList();
+  }
+
+  private Map<UUID, LoanReturnAssetReviewRequest> validateReturnRequest(Loan loan, LoanReturnRequest request) {
+    if (request == null || request.assetReviews() == null || request.assetReviews().isEmpty()) {
+      return Map.of();
+    }
+
+    Set<UUID> loanAssetIds = loan.getAssets().stream()
+        .map(loanAsset -> loanAsset.getAsset().getId())
+        .collect(java.util.stream.Collectors.toSet());
+    Set<UUID> seenAssetIds = new HashSet<>();
+    Map<UUID, LoanReturnAssetReviewRequest> reviewsByAssetId = new HashMap<>();
+
+    for (LoanReturnAssetReviewRequest review : request.assetReviews()) {
+      if (review == null || review.assetId() == null) {
+        throw new BadRequestException("Cada revisión debe indicar un activo.");
+      }
+      if (!loanAssetIds.contains(review.assetId())) {
+        throw new BadRequestException("El activo revisado no pertenece al préstamo.");
+      }
+      if (!seenAssetIds.add(review.assetId())) {
+        throw new BadRequestException("La lista de revisión contiene activos duplicados.");
+      }
+      if (review.hasIncident()) {
+        if (normalizeOptional(review.incidentDescription()) == null) {
+          throw new BadRequestException("Debe describir la incidencia registrada.");
+        }
+        if (review.conditionAfterReturn() == null) {
+          throw new BadRequestException("Debe indicar la condición final del activo.");
+        }
+      }
+      reviewsByAssetId.put(review.assetId(), review);
+    }
+
+    return reviewsByAssetId;
+  }
+
+  private void registerReturnTraceability(
+      Loan loan,
+      LoanAsset loanAsset,
+      LoanReturnAssetReviewRequest review,
+      User user
+  ) {
+    Asset asset = loanAsset.getAsset();
+    boolean hasIncident = review != null && review.hasIncident();
+    String incidentDescription = hasIncident ? normalizeOptional(review.incidentDescription()) : null;
+    traceabilityRepository.save(new AssetTraceability(
+        asset,
+        TraceabilityEventType.RETURNED,
+        "Activo devuelto del préstamo %s.".formatted(loan.getCode()),
+        loan.getDestinationNameSnapshot(),
+        asset.getLocation().getName(),
+        hasIncident
+            ? "Incidencia en devolución del préstamo %s: %s".formatted(loan.getCode(), incidentDescription)
+            : "Devolución registrada.",
+        user
+    ));
+
+    if (!hasIncident) {
+      return;
+    }
+
+    AssetCondition previousCondition = asset.getCondition();
+    AssetCondition nextCondition = review.conditionAfterReturn();
+    if (previousCondition == nextCondition) {
+      return;
+    }
+
+    asset.setCondition(nextCondition);
+    traceabilityRepository.save(new AssetTraceability(
+        asset,
+        TraceabilityEventType.CONDITION_CHANGED,
+        "Condición actualizada por incidencia en devolución del préstamo %s.".formatted(loan.getCode()),
+        previousCondition.getLabel(),
+        nextCondition.getLabel(),
+        incidentDescription,
+        user
+    ));
+  }
+
+  private List<LoanActivityResponse> buildIncidentActivities(Loan loan) {
+    List<UUID> assetIds = loan.getAssets().stream()
+        .map(loanAsset -> loanAsset.getAsset().getId())
+        .toList();
+    if (assetIds.isEmpty()) {
+      return List.of();
+    }
+
+    String loanMarker = "préstamo %s".formatted(loan.getCode()).toLowerCase(Locale.ROOT);
+    return traceabilityRepository.findByAssetIdInOrderByOccurredAtDesc(assetIds).stream()
+        .filter(traceability -> traceability.getEventType() == TraceabilityEventType.CONDITION_CHANGED)
+        .filter(traceability -> traceability.getDescription().toLowerCase(Locale.ROOT).contains(loanMarker))
+        .map(traceability -> LoanActivityResponse.of(
+            traceability.getId(),
+            "Incidencia registrada",
+            "%s (%s): %s".formatted(
+                traceability.getAsset().getName(),
+                traceability.getAsset().getCode(),
+                traceability.getReason()
+            ),
+            traceability.getUser() == null ? "Sistema" : traceability.getUser().getFullName(),
+            traceability.getOccurredAt()
+        ))
         .toList();
   }
 
