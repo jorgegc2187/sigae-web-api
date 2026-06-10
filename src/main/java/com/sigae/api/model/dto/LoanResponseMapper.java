@@ -28,11 +28,11 @@ final class LoanResponseMapper {
 
   private static String conditionLabel(AssetCondition condition) {
     if (condition == null) {
-      return "Operativo";
+      return "Bueno";
     }
 
     return switch (condition) {
-      case BUENO -> "Operativo";
+      case BUENO -> "Bueno";
       case REGULAR -> "Regular";
       case MALO -> "Malo";
       case MANTENIMIENTO -> "Mantenimiento";
