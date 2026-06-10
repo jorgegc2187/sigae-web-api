@@ -22,7 +22,7 @@ final class LoanResponseMapper {
         loanAsset.getAssetCodeSnapshot(),
         loanAsset.getAssetNameSnapshot(),
         loanAsset.getAssetCategorySnapshot(),
-        loanAsset.getLoan().getCompletedAt() == null ? "En préstamo" : conditionLabel(loanAsset.getAsset().getCondition())
+        conditionLabel(loanAsset.getAsset().getCondition())
     );
   }
 
