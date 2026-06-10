@@ -24,6 +24,7 @@ public record AssetResponse(
     LocalDate acquisitionDate,
     String notes,
     List<AssetAttributeValueResponse> attributeValues,
+    List<AssetAttachmentResponse> attachments,
     boolean availableForLoan,
     UUID activeLoanId
 ) {
@@ -50,6 +51,7 @@ public record AssetResponse(
         asset.getAcquisitionDate(),
         asset.getNotes(),
         asset.getAttributeValues().stream().map(AssetAttributeValueResponse::from).toList(),
+        asset.getAttachments().stream().map(AssetAttachmentResponse::from).toList(),
         availableForLoan,
         activeLoanId
     );

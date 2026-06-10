@@ -4,9 +4,11 @@ import com.sigae.api.exception.BadRequestException;
 import com.sigae.api.exception.ConflictException;
 import com.sigae.api.exception.NotFoundException;
 import com.sigae.api.model.dto.AssetAttributeValueRequest;
+import com.sigae.api.model.dto.AssetAttachmentFile;
 import com.sigae.api.model.dto.AssetInventoryGroupResponse;
 import com.sigae.api.model.dto.AssetInventoryGroupUnitResponse;
 import com.sigae.api.model.dto.AssetRequest;
+import com.sigae.api.model.entity.AssetAttachment;
 import com.sigae.api.model.entity.Asset;
 import com.sigae.api.model.entity.AssetAttributeDefinition;
 import com.sigae.api.model.entity.AssetAttributeValue;
@@ -17,10 +19,12 @@ import com.sigae.api.model.entity.Location;
 import com.sigae.api.model.entity.Supplier;
 import com.sigae.api.model.entity.TraceabilityEventType;
 import com.sigae.api.repository.AssetRepository;
+import com.sigae.api.repository.AssetAttachmentRepository;
 import com.sigae.api.repository.AssetTraceabilityRepository;
 import com.sigae.api.repository.AssetTypeRepository;
 import com.sigae.api.repository.LocationRepository;
 import com.sigae.api.repository.SupplierRepository;
+import java.io.IOException;
 import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
@@ -30,8 +34,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @Transactional(readOnly = true)
@@ -40,6 +46,7 @@ public class AssetService {
   private static final Map<String, String> CATEGORY_PREFIXES = buildCategoryPrefixes();
 
   private final AssetRepository assetRepository;
+  private final AssetAttachmentRepository attachmentRepository;
   private final AssetTypeRepository assetTypeRepository;
   private final LocationRepository locationRepository;
   private final SupplierRepository supplierRepository;
@@ -48,6 +55,7 @@ public class AssetService {
 
   public AssetService(
       AssetRepository assetRepository,
+      AssetAttachmentRepository attachmentRepository,
       AssetTypeRepository assetTypeRepository,
       LocationRepository locationRepository,
       SupplierRepository supplierRepository,
@@ -55,6 +63,7 @@ public class AssetService {
       LoanService loanService
   ) {
     this.assetRepository = assetRepository;
+    this.attachmentRepository = attachmentRepository;
     this.assetTypeRepository = assetTypeRepository;
     this.locationRepository = locationRepository;
     this.supplierRepository = supplierRepository;
@@ -69,6 +78,18 @@ public class AssetService {
   public com.sigae.api.model.dto.AssetResponse toResponse(Asset asset) {
     UUID activeLoanId = loanService.activeLoanIdForAsset(asset.getId());
     return com.sigae.api.model.dto.AssetResponse.from(asset, activeLoanId == null && loanService.isAssetAvailableForLoan(asset), activeLoanId);
+  }
+
+  public List<com.sigae.api.model.dto.AssetResponse> findAllResponses() {
+    return assetRepository.findAll().stream().map(this::toResponse).toList();
+  }
+
+  public com.sigae.api.model.dto.AssetResponse getResponseById(UUID id) {
+    return toResponse(getById(id));
+  }
+
+  public com.sigae.api.model.dto.AssetResponse lookupResponseByScanValue(String value) {
+    return toResponse(lookupByScanValue(value));
   }
 
   public List<AssetInventoryGroupResponse> findGrouped(String search, UUID categoryId) {
@@ -104,7 +125,7 @@ public class AssetService {
   }
 
   @Transactional
-  public Asset create(AssetRequest request) {
+  public Asset create(AssetRequest request, List<MultipartFile> attachments) {
     AssetType assetType = getAssetType(request.assetTypeId());
     Location location = getLocation(request.locationId());
     Supplier supplier = getSupplierOrNull(request.supplierId());
@@ -123,7 +144,8 @@ public class AssetService {
         request.condition()
     );
     applyOptionalFields(asset, request, resolvedBarcode);
-    asset.replaceAttributeValues(buildAttributeValues(assetType, request.attributeValues()));
+    asset.syncAttributeValues(buildAttributeValues(assetType, request.attributeValues()));
+    applyAttachments(asset, attachments);
 
     Asset saved = assetRepository.save(asset);
     traceabilityRepository.save(new AssetTraceability(
@@ -139,7 +161,7 @@ public class AssetService {
   }
 
   @Transactional
-  public Asset update(UUID id, AssetRequest request) {
+  public Asset update(UUID id, AssetRequest request, List<MultipartFile> attachments) {
     Asset asset = getById(id);
     AssetCondition previousCondition = asset.getCondition();
     UUID previousLocationId = asset.getLocation().getId();
@@ -159,7 +181,9 @@ public class AssetService {
     asset.setSupplier(getSupplierOrNull(request.supplierId()));
     asset.setCondition(request.condition());
     applyOptionalFields(asset, request, resolvedBarcode);
-    asset.replaceAttributeValues(buildAttributeValues(assetType, request.attributeValues()));
+    asset.syncAttributeValues(buildAttributeValues(assetType, request.attributeValues()));
+    removeAttachments(asset, request.removedAttachmentIds());
+    applyAttachments(asset, attachments);
 
     Asset saved = assetRepository.save(asset);
     traceabilityRepository.save(new AssetTraceability(
@@ -224,6 +248,16 @@ public class AssetService {
     asset.setNotes(normalizeOptional(request.notes()));
   }
 
+  public AssetAttachmentFile getAttachment(UUID assetId, UUID attachmentId) {
+    AssetAttachment attachment = attachmentRepository.findByIdAndAssetId(attachmentId, assetId)
+        .orElseThrow(() -> new NotFoundException("Adjunto de activo no encontrado."));
+    return new AssetAttachmentFile(
+        attachment.getFileName(),
+        MediaType.parseMediaType(attachment.getMimeType()),
+        attachment.getContent()
+    );
+  }
+
   private List<AssetAttributeValue> buildAttributeValues(
       AssetType assetType,
       List<AssetAttributeValueRequest> requests
@@ -267,8 +301,53 @@ public class AssetService {
         });
   }
 
+  private void applyAttachments(Asset asset, List<MultipartFile> attachments) {
+    if (attachments == null || attachments.isEmpty()) {
+      return;
+    }
+
+    for (int index = 0; index < attachments.size(); index++) {
+      MultipartFile file = attachments.get(index);
+      if (file == null || file.isEmpty()) {
+        continue;
+      }
+
+      try {
+        asset.addAttachment(new AssetAttachment(
+            normalizeFilename(file.getOriginalFilename(), "adjunto-activo-%d".formatted(index + 1)),
+            file.getContentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : file.getContentType(),
+            file.getSize(),
+            file.getBytes()
+        ));
+      } catch (IOException exception) {
+        throw new BadRequestException("No se pudo procesar uno de los adjuntos del activo.");
+      }
+    }
+  }
+
+  private void removeAttachments(Asset asset, List<UUID> removedAttachmentIds) {
+    if (removedAttachmentIds == null || removedAttachmentIds.isEmpty()) {
+      return;
+    }
+
+    Map<UUID, AssetAttachment> attachmentsById = asset.getAttachments().stream()
+        .collect(Collectors.toMap(AssetAttachment::getId, Function.identity()));
+    for (UUID removedAttachmentId : removedAttachmentIds) {
+      AssetAttachment attachment = attachmentsById.get(removedAttachmentId);
+      if (attachment == null) {
+        throw new BadRequestException("Uno de los adjuntos a eliminar no pertenece al activo.");
+      }
+      asset.getAttachments().remove(attachment);
+    }
+  }
+
   private String normalizeOptional(String value) {
     return value == null || value.isBlank() ? null : value.trim();
+  }
+
+  private String normalizeFilename(String value, String fallback) {
+    String normalized = normalizeOptional(value);
+    return normalized == null ? fallback : normalized;
   }
 
   private String resolveCodeForCreate(AssetRequest request, AssetType assetType) {

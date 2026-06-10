@@ -13,7 +13,14 @@ import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Entity
 @Table(name = "asset")
@@ -56,6 +63,10 @@ public class Asset extends BaseEntity {
   @OneToMany(mappedBy = "asset", cascade = CascadeType.ALL, orphanRemoval = true)
   @OrderBy("createdAt ASC")
   private List<AssetAttributeValue> attributeValues = new ArrayList<>();
+
+  @OneToMany(mappedBy = "asset", cascade = CascadeType.ALL, orphanRemoval = true)
+  @OrderBy("createdAt ASC")
+  private Set<AssetAttachment> attachments = new LinkedHashSet<>();
 
   protected Asset() {}
 
@@ -156,5 +167,41 @@ public class Asset extends BaseEntity {
     attributeValues.clear();
     attributeValues.addAll(values);
     attributeValues.forEach(value -> value.setAsset(this));
+  }
+
+  public void syncAttributeValues(List<AssetAttributeValue> values) {
+    Map<UUID, AssetAttributeValue> incomingByDefinitionId = values.stream()
+        .collect(Collectors.toMap(
+            value -> value.getAttributeDefinition().getId(),
+            Function.identity(),
+            (left, right) -> right
+        ));
+
+    Iterator<AssetAttributeValue> iterator = attributeValues.iterator();
+    while (iterator.hasNext()) {
+      AssetAttributeValue existingValue = iterator.next();
+      AssetAttributeValue incomingValue = incomingByDefinitionId.remove(existingValue.getAttributeDefinition().getId());
+
+      if (incomingValue == null) {
+        iterator.remove();
+        continue;
+      }
+
+      existingValue.setValue(incomingValue.getValue());
+    }
+
+    incomingByDefinitionId.values().forEach(value -> {
+      value.setAsset(this);
+      attributeValues.add(value);
+    });
+  }
+
+  public Set<AssetAttachment> getAttachments() {
+    return attachments;
+  }
+
+  public void addAttachment(AssetAttachment attachment) {
+    attachments.add(attachment);
+    attachment.setAsset(this);
   }
 }

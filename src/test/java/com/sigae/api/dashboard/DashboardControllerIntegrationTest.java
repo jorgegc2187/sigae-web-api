@@ -13,16 +13,19 @@ import com.sigae.api.repository.LoanRepository;
 import com.sigae.api.repository.TeacherRepository;
 import com.sigae.api.support.IntegrationTestSupport;
 import java.time.LocalDate;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -170,10 +173,8 @@ class DashboardControllerIntegrationTest extends IntegrationTestSupport {
       String name,
       String condition
   ) throws Exception {
-    String response = mockMvc.perform(post("/api/assets")
-            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
+    String response = mockMvc.perform(multipart("/api/assets")
+            .file(assetPayload("""
                 {
                   "code": "%s",
                   "name": "%s",
@@ -184,9 +185,11 @@ class DashboardControllerIntegrationTest extends IntegrationTestSupport {
                   "barcode": "BC-%s",
                   "acquisitionDate": "2026-05-20",
                   "notes": "Registro dashboard",
-                  "attributeValues": []
+                  "attributeValues": [],
+                  "removedAttachmentIds": []
                 }
                 """.formatted(code, name, assetTypeId, locationId, condition, code, code)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated())
         .andReturn()
         .getResponse()
@@ -203,10 +206,8 @@ class DashboardControllerIntegrationTest extends IntegrationTestSupport {
       String condition,
       String name
   ) throws Exception {
-    mockMvc.perform(patch("/api/assets/{assetId}", assetId)
-            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
+    mockMvc.perform(multipart("/api/assets/{assetId}", assetId)
+            .file(assetPayload("""
                 {
                   "code": "CMP-2026-004",
                   "name": "%s",
@@ -217,10 +218,25 @@ class DashboardControllerIntegrationTest extends IntegrationTestSupport {
                   "barcode": "BC-CMP-2026-004",
                   "acquisitionDate": "2026-05-20",
                   "notes": "Registro dashboard",
-                  "attributeValues": []
+                  "attributeValues": [],
+                  "removedAttachmentIds": []
                 }
                 """.formatted(name, assetTypeId, locationId, condition)))
+            .with(request -> {
+              request.setMethod("PATCH");
+              return request;
+            })
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isOk());
+  }
+
+  private MockMultipartFile assetPayload(String content) {
+    return new MockMultipartFile(
+        "payload",
+        "",
+        MediaType.APPLICATION_JSON_VALUE,
+        content.getBytes(StandardCharsets.UTF_8)
+    );
   }
 
   private void createLoan(

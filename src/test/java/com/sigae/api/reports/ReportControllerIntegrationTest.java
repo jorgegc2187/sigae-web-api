@@ -3,13 +3,16 @@ package com.sigae.api.reports;
 import com.sigae.api.model.entity.UserRole;
 import com.sigae.api.model.entity.UserStatus;
 import com.sigae.api.support.IntegrationTestSupport;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -171,10 +174,8 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
       String code,
       String acquisitionDate
   ) throws Exception {
-    mockMvc.perform(post("/api/assets")
-            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
+    mockMvc.perform(multipart("/api/assets")
+            .file(assetPayload("""
                 {
                   "code": "%s",
                   "name": "Laptop Lenovo ThinkPad",
@@ -185,10 +186,21 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
                   "barcode": "BC-%s",
                   "acquisitionDate": "%s",
                   "notes": "Registro para reporte",
-                  "attributeValues": []
+                  "attributeValues": [],
+                  "removedAttachmentIds": []
                 }
                 """.formatted(code, assetTypeId, locationId, code, acquisitionDate)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated());
+  }
+
+  private MockMultipartFile assetPayload(String content) {
+    return new MockMultipartFile(
+        "payload",
+        "",
+        MediaType.APPLICATION_JSON_VALUE,
+        content.getBytes(StandardCharsets.UTF_8)
+    );
   }
 
   private record AssetCatalog(UUID categoryId, UUID assetTypeId) {}

@@ -137,7 +137,7 @@ class LoanControllerIntegrationTest extends IntegrationTestSupport {
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("Devuelto"))
-        .andExpect(jsonPath("$.assets[0].status").value("Operativo"));
+        .andExpect(jsonPath("$.assets[0].status").value("Bueno"));
   }
 
   @Test
@@ -352,23 +352,28 @@ class LoanControllerIntegrationTest extends IntegrationTestSupport {
       String code,
       String name
   ) throws Exception {
-    String response = mockMvc.perform(post("/api/assets")
-            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
-                {
-                  "code": "%s",
-                  "name": "%s",
-                  "assetTypeId": "%s",
-                  "locationId": "%s",
-                  "condition": "Bueno",
-                  "serialNumber": "%s-SN",
-                  "barcode": "BC-%s",
-                  "acquisitionDate": "2026-01-15",
-                  "notes": "Activo para préstamo",
-                  "attributeValues": []
-                }
-                """.formatted(code, name, assetTypeId, locationId, code, code)))
+    String response = mockMvc.perform(multipart("/api/assets")
+            .file(new MockMultipartFile(
+                "payload",
+                "",
+                MediaType.APPLICATION_JSON_VALUE,
+                """
+                    {
+                      "code": "%s",
+                      "name": "%s",
+                      "assetTypeId": "%s",
+                      "locationId": "%s",
+                      "condition": "Bueno",
+                      "serialNumber": "%s-SN",
+                      "barcode": "BC-%s",
+                      "acquisitionDate": "2026-01-15",
+                      "notes": "Activo para préstamo",
+                      "attributeValues": [],
+                      "removedAttachmentIds": []
+                    }
+                    """.formatted(code, name, assetTypeId, locationId, code, code).getBytes(StandardCharsets.UTF_8)
+            ))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated())
         .andReturn()
         .getResponse()

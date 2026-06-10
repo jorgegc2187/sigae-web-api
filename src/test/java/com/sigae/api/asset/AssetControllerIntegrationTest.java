@@ -3,12 +3,19 @@ package com.sigae.api.asset;
 import com.sigae.api.model.entity.UserRole;
 import com.sigae.api.model.entity.UserStatus;
 import com.sigae.api.support.IntegrationTestSupport;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -121,10 +128,8 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
     AssetCatalog catalog = createAssetCatalog(accessToken);
     UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
 
-    mockMvc.perform(post("/api/assets")
-            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
+    mockMvc.perform(multipart("/api/assets")
+            .file(assetPayload("""
                 {
                   "name": "Laptop Lenovo ThinkPad",
                   "assetTypeId": "%s",
@@ -132,12 +137,115 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
                   "condition": "Bueno",
                   "acquisitionDate": "2026-01-15",
                   "notes": "Registro agrupado de inventario",
-                  "attributeValues": []
+                  "attributeValues": [],
+                  "removedAttachmentIds": []
                 }
                 """.formatted(catalog.assetTypeId(), locationId)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.matchesPattern("CMP-\\d{4}-\\d{3}")))
         .andExpect(jsonPath("$.barcode").isNotEmpty());
+  }
+
+  @Test
+  void createWithAttachmentPersistsAndDownloadsAssetAttachment() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+    byte[] attachmentBytes = "factura-activo".getBytes(StandardCharsets.UTF_8);
+
+    String response = mockMvc.perform(multipart("/api/assets")
+            .file(assetPayload("""
+                {
+                  "code": "CMP-2026-050",
+                  "name": "Laptop Lenovo ThinkPad",
+                  "assetTypeId": "%s",
+                  "locationId": "%s",
+                  "condition": "Bueno",
+                  "acquisitionDate": "2026-01-15",
+                  "notes": "Activo con adjunto",
+                  "attributeValues": [],
+                  "removedAttachmentIds": []
+                }
+                """.formatted(catalog.assetTypeId(), locationId)))
+            .file(new MockMultipartFile("attachments", "factura.pdf", MediaType.APPLICATION_PDF_VALUE, attachmentBytes))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.attachments.length()").value(1))
+        .andExpect(jsonPath("$.attachments[0].fileName").value("factura.pdf"))
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    String assetId = objectMapper.readTree(response).get("id").asText();
+    String attachmentId = objectMapper.readTree(response).get("attachments").get(0).get("id").asText();
+
+    mockMvc.perform(get("/api/assets/{assetId}/attachments/{attachmentId}", assetId, attachmentId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(header().string(HttpHeaders.CONTENT_TYPE, containsString(MediaType.APPLICATION_PDF_VALUE)))
+        .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("attachment")))
+        .andExpect(content().bytes(attachmentBytes));
+  }
+
+  @Test
+  void updateCanModifyExistingAttributeValueWithoutDuplicatingRows() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+    UUID attributeDefinitionId = catalog.attributeDefinitionId();
+
+    String createResponse = mockMvc.perform(multipart("/api/assets")
+            .file(assetPayload("""
+                {
+                  "code": "CMP-2026-060",
+                  "name": "Laptop Lenovo ThinkPad",
+                  "assetTypeId": "%s",
+                  "locationId": "%s",
+                  "condition": "Bueno",
+                  "acquisitionDate": "2026-01-15",
+                  "notes": "Activo con atributo dinámico",
+                  "attributeValues": [
+                    {
+                      "attributeDefinitionId": "%s",
+                      "value": "Lenovo"
+                    }
+                  ],
+                  "removedAttachmentIds": []
+                }
+                """.formatted(catalog.assetTypeId(), locationId, attributeDefinitionId)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.attributeValues[0].value").value("Lenovo"))
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    String assetId = objectMapper.readTree(createResponse).get("id").asText();
+
+    mockMvc.perform(multipart(HttpMethod.PATCH, "/api/assets/{assetId}", assetId)
+            .file(assetPayload("""
+                {
+                  "code": "CMP-2026-060",
+                  "name": "Laptop Lenovo ThinkPad",
+                  "assetTypeId": "%s",
+                  "locationId": "%s",
+                  "condition": "Bueno",
+                  "acquisitionDate": "2026-01-15",
+                  "notes": "Activo con atributo dinámico actualizado",
+                  "attributeValues": [
+                    {
+                      "attributeDefinitionId": "%s",
+                      "value": "Dell"
+                    }
+                  ],
+                  "removedAttachmentIds": []
+                }
+                """.formatted(catalog.assetTypeId(), locationId, attributeDefinitionId)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.attributeValues.length()").value(1))
+        .andExpect(jsonPath("$.attributeValues[0].value").value("Dell"));
   }
 
   private String createAdminAndLogin() throws Exception {
@@ -202,7 +310,12 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
         .getResponse()
         .getContentAsString();
 
-    return new AssetCatalog(categoryId, UUID.fromString(objectMapper.readTree(typeResponse).get("id").asText()));
+    var typeNode = objectMapper.readTree(typeResponse);
+    return new AssetCatalog(
+        categoryId,
+        UUID.fromString(typeNode.get("id").asText()),
+        UUID.fromString(typeNode.get("attributes").get(0).get("id").asText())
+    );
   }
 
   private void createAsset(
@@ -212,10 +325,8 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
       String code,
       String name
   ) throws Exception {
-    mockMvc.perform(post("/api/assets")
-            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
+    mockMvc.perform(multipart("/api/assets")
+            .file(assetPayload("""
                 {
                   "code": "%s",
                   "name": "%s",
@@ -226,11 +337,22 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
                   "barcode": "BC-%s",
                   "acquisitionDate": "2026-01-15",
                   "notes": "Registro agrupado de inventario",
-                  "attributeValues": []
+                  "attributeValues": [],
+                  "removedAttachmentIds": []
                 }
                 """.formatted(code, name, assetTypeId, locationId, code, code)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated());
   }
 
-  private record AssetCatalog(UUID categoryId, UUID assetTypeId) {}
+  private MockMultipartFile assetPayload(String content) {
+    return new MockMultipartFile(
+        "payload",
+        "",
+        MediaType.APPLICATION_JSON_VALUE,
+        content.getBytes(StandardCharsets.UTF_8)
+    );
+  }
+
+  private record AssetCatalog(UUID categoryId, UUID assetTypeId, UUID attributeDefinitionId) {}
 }

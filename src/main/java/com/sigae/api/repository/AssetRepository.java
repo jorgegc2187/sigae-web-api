@@ -26,20 +26,20 @@ public interface AssetRepository extends JpaRepository<Asset, UUID>, JpaSpecific
     long getTotal();
   }
 
-  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition"})
+  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition", "attachments"})
   Optional<Asset> findByCodeIgnoreCase(String code);
 
-  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition"})
+  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition", "attachments"})
   Optional<Asset> findByBarcodeIgnoreCase(String barcode);
 
   List<Asset> findAllByCodeStartingWithIgnoreCase(String prefix);
 
   @Override
-  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition"})
+  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition", "attachments"})
   java.util.List<Asset> findAll();
 
   @Override
-  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition"})
+  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition", "attachments"})
   Optional<Asset> findById(UUID id);
 
   @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier"})

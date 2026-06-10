@@ -3,13 +3,16 @@ package com.sigae.api.inventory;
 import com.sigae.api.model.entity.UserRole;
 import com.sigae.api.model.entity.UserStatus;
 import com.sigae.api.support.IntegrationTestSupport;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -83,10 +86,8 @@ class CatalogInventoryControllerIntegrationTest extends IntegrationTestSupport {
     createUser("Luis Quispe", "luis@sigae.edu.pe", "encargado123", UserRole.ENCARGADO, UserStatus.ACTIVE);
     String encargadoToken = loginAndGetAccessToken("luis@sigae.edu.pe", "encargado123");
 
-    String assetResponse = mockMvc.perform(post("/api/assets")
-            .header(HttpHeaders.AUTHORIZATION, "Bearer " + encargadoToken)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content("""
+    String assetResponse = mockMvc.perform(multipart("/api/assets")
+            .file(assetPayload("""
                 {
                   "code": "CMP-2026-001",
                   "name": "Laptop Lenovo ThinkPad",
@@ -103,9 +104,11 @@ class CatalogInventoryControllerIntegrationTest extends IntegrationTestSupport {
                       "attributeDefinitionId": "%s",
                       "value": "Lenovo"
                     }
-                  ]
+                  ],
+                  "removedAttachmentIds": []
                 }
                 """.formatted(assetTypeId, locationId, supplierId, attributeDefinitionId)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + encargadoToken))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.code").value("CMP-2026-001"))
         .andExpect(jsonPath("$.condition").value("Bueno"))
@@ -246,5 +249,14 @@ class CatalogInventoryControllerIntegrationTest extends IntegrationTestSupport {
         .getContentAsString();
 
     return UUID.fromString(objectMapper.readTree(response).get(0).get("types").get(0).get("attributes").get(0).get("id").asText());
+  }
+
+  private MockMultipartFile assetPayload(String content) {
+    return new MockMultipartFile(
+        "payload",
+        "",
+        MediaType.APPLICATION_JSON_VALUE,
+        content.getBytes(StandardCharsets.UTF_8)
+    );
   }
 }

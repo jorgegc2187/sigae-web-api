@@ -61,7 +61,7 @@ public class GlobalExceptionHandler {
         .body(ApiError.of(
             413,
             "Payload Too Large",
-            "Los archivos adjuntos exceden el tamaño máximo permitido para registrar el préstamo.",
+            "Los archivos adjuntos exceden el tamaño máximo permitido.",
             request.getRequestURI()
         ));
   }

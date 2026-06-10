@@ -20,5 +20,6 @@ public record AssetRequest(
     @Size(max = 100) String barcode,
     LocalDate acquisitionDate,
     String notes,
-    @Valid List<AssetAttributeValueRequest> attributeValues
+    @Valid List<AssetAttributeValueRequest> attributeValues,
+    List<UUID> removedAttachmentIds
 ) {}

@@ -3,22 +3,27 @@ package com.sigae.api.controller;
 import com.sigae.api.model.dto.AssetRequest;
 import com.sigae.api.model.dto.AssetInventoryGroupResponse;
 import com.sigae.api.model.dto.AssetResponse;
+import com.sigae.api.model.dto.AssetAttachmentFile;
 import com.sigae.api.model.dto.AssetTraceabilityResponse;
 import com.sigae.api.service.AssetService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/assets")
@@ -32,7 +37,7 @@ public class AssetController {
 
   @GetMapping
   public List<AssetResponse> list() {
-    return assetService.findAll().stream().map(assetService::toResponse).toList();
+    return assetService.findAllResponses();
   }
 
   @GetMapping("/grouped")
@@ -50,12 +55,12 @@ public class AssetController {
 
   @GetMapping("/lookup")
   public AssetResponse lookup(@RequestParam String value) {
-    return assetService.toResponse(assetService.lookupByScanValue(value));
+    return assetService.lookupResponseByScanValue(value);
   }
 
   @GetMapping("/{assetId}")
   public AssetResponse getById(@PathVariable UUID assetId) {
-    return assetService.toResponse(assetService.getById(assetId));
+    return assetService.getResponseById(assetId);
   }
 
   @GetMapping("/{assetId}/traceability")
@@ -63,19 +68,35 @@ public class AssetController {
     return assetService.getTraceability(assetId).stream().map(AssetTraceabilityResponse::from).toList();
   }
 
+  @GetMapping("/{assetId}/attachments/{attachmentId}")
+  public ResponseEntity<byte[]> downloadAttachment(
+      @PathVariable UUID assetId,
+      @PathVariable UUID attachmentId
+  ) {
+    AssetAttachmentFile file = assetService.getAttachment(assetId, attachmentId);
+    return ResponseEntity.ok()
+        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(file.filename()).build().toString())
+        .contentType(file.mediaType())
+        .body(file.content());
+  }
+
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
   @PreAuthorize("hasAnyRole('ADMINISTRADOR', 'ENCARGADO')")
-  public AssetResponse create(@Valid @RequestBody AssetRequest request) {
-    return AssetResponse.from(assetService.create(request));
+  public AssetResponse create(
+      @Valid @RequestPart("payload") AssetRequest request,
+      @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments
+  ) {
+    return AssetResponse.from(assetService.create(request, attachments));
   }
 
   @PatchMapping("/{assetId}")
   @PreAuthorize("hasAnyRole('ADMINISTRADOR', 'ENCARGADO')")
   public AssetResponse update(
       @PathVariable UUID assetId,
-      @Valid @RequestBody AssetRequest request
+      @Valid @RequestPart("payload") AssetRequest request,
+      @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments
   ) {
-    return AssetResponse.from(assetService.update(assetId, request));
+    return AssetResponse.from(assetService.update(assetId, request, attachments));
   }
 }
