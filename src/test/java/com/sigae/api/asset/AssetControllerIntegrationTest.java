@@ -5,6 +5,7 @@ import com.sigae.api.model.entity.UserStatus;
 import com.sigae.api.support.IntegrationTestSupport;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpHeaders;
@@ -329,6 +330,108 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$[*].eventType").value(hasItem("REACTIVATED")));
+  }
+
+  @Test
+  void updateRegistersDetailedTraceabilityWithAuthenticatedUser() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+    UUID attributeDefinitionId = catalog.attributeDefinitionId();
+
+    String createResponse = mockMvc.perform(multipart("/api/assets")
+            .file(assetPayload("""
+                {
+                  "code": "CMP-2026-080",
+                  "name": "Laptop Lenovo ThinkPad",
+                  "assetTypeId": "%s",
+                  "locationId": "%s",
+                  "condition": "Bueno",
+                  "notes": "Activo inicial",
+                  "attributeValues": [
+                    {
+                      "attributeDefinitionId": "%s",
+                      "value": "Lenovo"
+                    }
+                  ],
+                  "removedAttachmentIds": []
+                }
+                """.formatted(catalog.assetTypeId(), locationId, attributeDefinitionId)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isCreated())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    String assetId = objectMapper.readTree(createResponse).get("id").asText();
+
+    mockMvc.perform(multipart(HttpMethod.PATCH, "/api/assets/{assetId}", assetId)
+            .file(assetPayload("""
+                {
+                  "code": "CMP-2026-080",
+                  "name": "Laptop Dell Latitude",
+                  "assetTypeId": "%s",
+                  "locationId": "%s",
+                  "condition": "Regular",
+                  "notes": "Activo actualizado por mantenimiento",
+                  "attributeValues": [
+                    {
+                      "attributeDefinitionId": "%s",
+                      "value": "Dell"
+                    }
+                  ],
+                  "removedAttachmentIds": []
+                }
+                """.formatted(catalog.assetTypeId(), locationId, attributeDefinitionId)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk());
+
+    var traceability = objectMapper.readTree(
+        mockMvc.perform(get("/api/assets/{assetId}/traceability", assetId)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse()
+            .getContentAsString()
+    );
+
+    boolean hasGenericUpdated = false;
+    boolean hasNameChange = false;
+    boolean hasConditionChange = false;
+    boolean hasAttributeChange = false;
+
+    for (var node : traceability) {
+      String description = node.get("description").asText();
+      if ("Activo actualizado.".equals(description)) {
+        hasGenericUpdated = true;
+      }
+
+      if ("Nombre del activo actualizado.".equals(description)
+          && "Laptop Lenovo ThinkPad".equals(node.path("previousValue").asText())
+          && "Laptop Dell Latitude".equals(node.path("newValue").asText())
+          && "Carlos Mendoza".equals(node.path("userName").asText())) {
+        hasNameChange = true;
+      }
+
+      if ("CONDITION_CHANGED".equals(node.path("eventType").asText())
+          && "Bueno".equals(node.path("previousValue").asText())
+          && "Regular".equals(node.path("newValue").asText())
+          && "Carlos Mendoza".equals(node.path("userName").asText())) {
+        hasConditionChange = true;
+      }
+
+      if ("Atributo \"Marca\" actualizado.".equals(description)
+          && "Lenovo".equals(node.path("previousValue").asText())
+          && "Dell".equals(node.path("newValue").asText())
+          && "Carlos Mendoza".equals(node.path("userName").asText())) {
+        hasAttributeChange = true;
+      }
+    }
+
+    Assertions.assertFalse(hasGenericUpdated);
+    Assertions.assertTrue(hasNameChange);
+    Assertions.assertTrue(hasConditionChange);
+    Assertions.assertTrue(hasAttributeChange);
   }
 
   private String createAdminAndLogin() throws Exception {

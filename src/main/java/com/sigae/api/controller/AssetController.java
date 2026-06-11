@@ -14,6 +14,7 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import com.sigae.api.security.AuthenticatedUser;
 
 @RestController
 @RequestMapping("/api/assets")
@@ -85,9 +87,10 @@ public class AssetController {
   @PreAuthorize("hasAnyRole('ADMINISTRADOR', 'ENCARGADO')")
   public AssetResponse create(
       @Valid @RequestPart("payload") AssetRequest request,
-      @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments
+      @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments,
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser
   ) {
-    return AssetResponse.from(assetService.create(request, attachments));
+    return AssetResponse.from(assetService.create(request, attachments, authenticatedUser));
   }
 
   @PatchMapping("/{assetId}")
@@ -95,8 +98,9 @@ public class AssetController {
   public AssetResponse update(
       @PathVariable UUID assetId,
       @Valid @RequestPart("payload") AssetRequest request,
-      @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments
+      @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments,
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser
   ) {
-    return AssetResponse.from(assetService.update(assetId, request, attachments));
+    return AssetResponse.from(assetService.update(assetId, request, attachments, authenticatedUser));
   }
 }

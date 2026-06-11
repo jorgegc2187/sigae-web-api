@@ -18,12 +18,15 @@ import com.sigae.api.model.entity.AssetType;
 import com.sigae.api.model.entity.Location;
 import com.sigae.api.model.entity.Supplier;
 import com.sigae.api.model.entity.TraceabilityEventType;
+import com.sigae.api.model.entity.User;
 import com.sigae.api.repository.AssetRepository;
 import com.sigae.api.repository.AssetAttachmentRepository;
 import com.sigae.api.repository.AssetTraceabilityRepository;
 import com.sigae.api.repository.AssetTypeRepository;
 import com.sigae.api.repository.LocationRepository;
 import com.sigae.api.repository.SupplierRepository;
+import com.sigae.api.repository.UserRepository;
+import com.sigae.api.security.AuthenticatedUser;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
@@ -32,6 +35,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -52,6 +56,7 @@ public class AssetService {
   private final LocationRepository locationRepository;
   private final SupplierRepository supplierRepository;
   private final AssetTraceabilityRepository traceabilityRepository;
+  private final UserRepository userRepository;
   private final LoanService loanService;
 
   public AssetService(
@@ -61,6 +66,7 @@ public class AssetService {
       LocationRepository locationRepository,
       SupplierRepository supplierRepository,
       AssetTraceabilityRepository traceabilityRepository,
+      UserRepository userRepository,
       LoanService loanService
   ) {
     this.assetRepository = assetRepository;
@@ -69,6 +75,7 @@ public class AssetService {
     this.locationRepository = locationRepository;
     this.supplierRepository = supplierRepository;
     this.traceabilityRepository = traceabilityRepository;
+    this.userRepository = userRepository;
     this.loanService = loanService;
   }
 
@@ -126,7 +133,8 @@ public class AssetService {
   }
 
   @Transactional
-  public Asset create(AssetRequest request, List<MultipartFile> attachments) {
+  public Asset create(AssetRequest request, List<MultipartFile> attachments, AuthenticatedUser authenticatedUser) {
+    User user = findUser(authenticatedUser);
     AssetType assetType = getAssetType(request.assetTypeId());
     Location location = getLocation(request.locationId());
     Supplier supplier = getSupplierOrNull(request.supplierId());
@@ -157,7 +165,7 @@ public class AssetService {
         null,
         saved.getCode(),
         null,
-        null
+        user
     ));
     if (saved.getCondition() == AssetCondition.DADO_DE_BAJA) {
       traceabilityRepository.save(new AssetTraceability(
@@ -167,23 +175,55 @@ public class AssetService {
           null,
           saved.getCondition().getLabel(),
           saved.getNotes(),
-          null
+          user
       ));
     }
     return getById(saved.getId());
   }
 
   @Transactional
-  public Asset update(UUID id, AssetRequest request, List<MultipartFile> attachments) {
+  public Asset update(UUID id, AssetRequest request, List<MultipartFile> attachments, AuthenticatedUser authenticatedUser) {
     Asset asset = getById(id);
+    User user = findUser(authenticatedUser);
+
+    String previousName = asset.getName();
+    String previousCode = asset.getCode();
+    String previousSerialNumber = asset.getSerialNumber();
+    String previousBarcode = asset.getBarcode();
+    java.time.LocalDate previousAcquisitionDate = asset.getAcquisitionDate();
+    String previousNotes = asset.getNotes();
     AssetCondition previousCondition = asset.getCondition();
-    UUID previousLocationId = asset.getLocation().getId();
+    String previousLocationName = asset.getLocation().getName();
+    String previousSupplierName = asset.getSupplier() == null ? null : asset.getSupplier().getName();
+    String previousTypeName = asset.getAssetType().getName();
+    String previousCategoryName = asset.getAssetType().getCategory().getName();
+    Map<UUID, AttributeSnapshot> previousAttributes = asset.getAttributeValues().stream()
+        .collect(Collectors.toMap(
+            value -> value.getAttributeDefinition().getId(),
+            value -> new AttributeSnapshot(
+                value.getAttributeDefinition().getId(),
+                value.getAttributeDefinition().getName(),
+                value.getValue()
+            )
+        ));
 
     AssetType assetType = getAssetType(request.assetTypeId());
     Location location = getLocation(request.locationId());
+    Supplier supplier = getSupplierOrNull(request.supplierId());
     String resolvedCode = requireExistingCode(request.code());
     String resolvedBarcode = resolveBarcodeForUpdate(request, asset, resolvedCode);
     AssetCondition nextCondition = request.condition();
+    List<AssetAttributeValue> nextAttributeValues = buildAttributeValues(assetType, request.attributeValues());
+    Map<UUID, AttributeSnapshot> nextAttributes = nextAttributeValues.stream()
+        .collect(Collectors.toMap(
+            value -> value.getAttributeDefinition().getId(),
+            value -> new AttributeSnapshot(
+                value.getAttributeDefinition().getId(),
+                value.getAttributeDefinition().getName(),
+                value.getValue()
+            ),
+            (left, right) -> right
+        ));
 
     ensureCodeAvailable(resolvedCode, asset.getId());
     ensureBarcodeAvailable(resolvedBarcode, asset.getId());
@@ -192,24 +232,32 @@ public class AssetService {
     asset.setName(request.name().trim());
     asset.setAssetType(assetType);
     asset.setLocation(location);
-    asset.setSupplier(getSupplierOrNull(request.supplierId()));
+    asset.setSupplier(supplier);
     asset.setCondition(nextCondition);
     applyOptionalFields(asset, request, resolvedBarcode);
     applyDecommissionedAtOnUpdate(asset, previousCondition, nextCondition);
-    asset.syncAttributeValues(buildAttributeValues(assetType, request.attributeValues()));
+    asset.syncAttributeValues(nextAttributeValues);
     removeAttachments(asset, request.removedAttachmentIds());
     applyAttachments(asset, attachments);
 
     Asset saved = assetRepository.save(asset);
-    traceabilityRepository.save(new AssetTraceability(
+    registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Nombre del activo actualizado.", previousName, saved.getName(), null, user);
+    registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Codigo del activo actualizado.", previousCode, saved.getCode(), null, user);
+    registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Proveedor del activo actualizado.", previousSupplierName, supplier == null ? null : supplier.getName(), null, user);
+    registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Serial number del activo actualizado.", previousSerialNumber, saved.getSerialNumber(), null, user);
+    registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Barcode del activo actualizado.", previousBarcode, saved.getBarcode(), null, user);
+    registerFieldTraceability(
         saved,
         TraceabilityEventType.UPDATED,
-        "Activo actualizado.",
+        "Fecha de adquisicion del activo actualizada.",
+        formatLocalDate(previousAcquisitionDate),
+        formatLocalDate(saved.getAcquisitionDate()),
         null,
-        saved.getCode(),
-        null,
-        null
-    ));
+        user
+    );
+    registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Notas del activo actualizadas.", previousNotes, saved.getNotes(), null, user);
+    registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Tipo de activo actualizado.", previousTypeName, saved.getAssetType().getName(), null, user);
+    registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Categoria del activo actualizada.", previousCategoryName, saved.getAssetType().getCategory().getName(), null, user);
 
     if (previousCondition != saved.getCondition()) {
       TraceabilityEventType eventType = resolveConditionTraceabilityEvent(previousCondition, saved.getCondition());
@@ -220,21 +268,23 @@ public class AssetService {
           previousCondition.getLabel(),
           saved.getCondition().getLabel(),
           saved.getNotes(),
-          null
+          user
       ));
     }
 
-    if (!previousLocationId.equals(saved.getLocation().getId())) {
+    if (!Objects.equals(previousLocationName, saved.getLocation().getName())) {
       traceabilityRepository.save(new AssetTraceability(
           saved,
           TraceabilityEventType.LOCATION_CHANGED,
           "Ubicación del activo actualizada.",
-          previousLocationId.toString(),
-          saved.getLocation().getId().toString(),
+          previousLocationName,
+          saved.getLocation().getName(),
           null,
-          null
+          user
       ));
     }
+
+    registerAttributeTraceability(saved, previousAttributes, nextAttributes, user);
 
     return getById(saved.getId());
   }
@@ -297,6 +347,69 @@ public class AssetService {
       case REACTIVATED -> "Activo reactivado.";
       default -> "Condición del activo actualizada.";
     };
+  }
+
+  private void registerAttributeTraceability(
+      Asset asset,
+      Map<UUID, AttributeSnapshot> previousAttributes,
+      Map<UUID, AttributeSnapshot> nextAttributes,
+      User user
+  ) {
+    Map<UUID, AttributeSnapshot> mergedAttributes = new HashMap<>(previousAttributes);
+    mergedAttributes.putAll(nextAttributes);
+
+    mergedAttributes.forEach((attributeId, snapshot) -> {
+      AttributeSnapshot previous = previousAttributes.get(attributeId);
+      AttributeSnapshot next = nextAttributes.get(attributeId);
+      String previousValue = previous == null ? null : previous.value();
+      String newValue = next == null ? null : next.value();
+
+      if (Objects.equals(normalizeOptional(previousValue), normalizeOptional(newValue))) {
+        return;
+      }
+
+      traceabilityRepository.save(new AssetTraceability(
+          asset,
+          TraceabilityEventType.UPDATED,
+          "Atributo \"%s\" actualizado.".formatted(snapshot.name()),
+          previousValue,
+          newValue,
+          null,
+          user
+      ));
+    });
+  }
+
+  private void registerFieldTraceability(
+      Asset asset,
+      TraceabilityEventType eventType,
+      String description,
+      String previousValue,
+      String newValue,
+      String reason,
+      User user
+  ) {
+    if (Objects.equals(normalizeOptional(previousValue), normalizeOptional(newValue))) {
+      return;
+    }
+
+    traceabilityRepository.save(new AssetTraceability(
+        asset,
+        eventType,
+        description,
+        previousValue,
+        newValue,
+        reason,
+        user
+    ));
+  }
+
+  private User findUser(AuthenticatedUser authenticatedUser) {
+    if (authenticatedUser == null) {
+      return null;
+    }
+
+    return userRepository.findById(authenticatedUser.userId()).orElse(null);
   }
 
   public AssetAttachmentFile getAttachment(UUID assetId, UUID attachmentId) {
@@ -399,6 +512,10 @@ public class AssetService {
   private String normalizeFilename(String value, String fallback) {
     String normalized = normalizeOptional(value);
     return normalized == null ? fallback : normalized;
+  }
+
+  private String formatLocalDate(java.time.LocalDate value) {
+    return value == null ? null : value.toString();
   }
 
   private String resolveCodeForCreate(AssetRequest request, AssetType assetType) {
@@ -591,5 +708,11 @@ public class AssetService {
       UUID categoryId,
       String categoryIcon,
       String categoryName
+  ) {}
+
+  private record AttributeSnapshot(
+      UUID id,
+      String name,
+      String value
   ) {}
 }
