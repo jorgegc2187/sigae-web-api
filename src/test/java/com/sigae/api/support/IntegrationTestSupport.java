@@ -58,6 +58,7 @@ public abstract class IntegrationTestSupport {
     jdbcTemplate.update("delete from loan_asset");
     jdbcTemplate.update("delete from loan");
     jdbcTemplate.update("delete from user_location");
+    jdbcTemplate.update("delete from asset_traceability_attachment");
     jdbcTemplate.update("delete from asset_traceability");
     jdbcTemplate.update("delete from asset_attribute_value");
     jdbcTemplate.update("delete from asset");

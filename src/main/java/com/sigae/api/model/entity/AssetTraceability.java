@@ -1,15 +1,19 @@
 package com.sigae.api.model.entity;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "asset_traceability")
@@ -38,6 +42,9 @@ public class AssetTraceability extends BaseEntity {
   @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "user_id")
   private User user;
+
+  @OneToMany(mappedBy = "traceability", cascade = CascadeType.ALL, orphanRemoval = true)
+  private List<AssetTraceabilityAttachment> attachments = new ArrayList<>();
 
   @Column(nullable = false)
   private Instant occurredAt;
@@ -99,5 +106,14 @@ public class AssetTraceability extends BaseEntity {
 
   public Instant getOccurredAt() {
     return occurredAt;
+  }
+
+  public List<AssetTraceabilityAttachment> getAttachments() {
+    return attachments;
+  }
+
+  public void addAttachment(AssetTraceabilityAttachment attachment) {
+    attachments.add(attachment);
+    attachment.setTraceability(this);
   }
 }

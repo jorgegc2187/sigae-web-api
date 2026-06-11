@@ -8,12 +8,14 @@ import com.sigae.api.model.dto.AssetAttachmentFile;
 import com.sigae.api.model.dto.AssetInventoryGroupResponse;
 import com.sigae.api.model.dto.AssetInventoryGroupUnitResponse;
 import com.sigae.api.model.dto.AssetRequest;
+import com.sigae.api.model.dto.AssetStatusChangeRequest;
 import com.sigae.api.model.entity.AssetAttachment;
 import com.sigae.api.model.entity.Asset;
 import com.sigae.api.model.entity.AssetAttributeDefinition;
 import com.sigae.api.model.entity.AssetAttributeValue;
 import com.sigae.api.model.entity.AssetCondition;
 import com.sigae.api.model.entity.AssetTraceability;
+import com.sigae.api.model.entity.AssetTraceabilityAttachment;
 import com.sigae.api.model.entity.AssetType;
 import com.sigae.api.model.entity.Location;
 import com.sigae.api.model.entity.Supplier;
@@ -21,6 +23,7 @@ import com.sigae.api.model.entity.TraceabilityEventType;
 import com.sigae.api.model.entity.User;
 import com.sigae.api.repository.AssetRepository;
 import com.sigae.api.repository.AssetAttachmentRepository;
+import com.sigae.api.repository.AssetTraceabilityAttachmentRepository;
 import com.sigae.api.repository.AssetTraceabilityRepository;
 import com.sigae.api.repository.AssetTypeRepository;
 import com.sigae.api.repository.LocationRepository;
@@ -36,6 +39,7 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -49,9 +53,18 @@ import org.springframework.web.multipart.MultipartFile;
 public class AssetService {
   private static final Map<String, String> TYPE_PREFIXES = buildTypePrefixes();
   private static final Map<String, String> CATEGORY_PREFIXES = buildCategoryPrefixes();
+  private static final long STATUS_CHANGE_ATTACHMENT_MAX_SIZE_BYTES = 5L * 1024 * 1024;
+  private static final Set<String> STATUS_CHANGE_ALLOWED_CONTENT_TYPES = Set.of(
+      MediaType.IMAGE_JPEG_VALUE,
+      "image/jpg",
+      MediaType.IMAGE_PNG_VALUE,
+      MediaType.APPLICATION_PDF_VALUE
+  );
+  private static final Set<String> STATUS_CHANGE_ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "pdf");
 
   private final AssetRepository assetRepository;
   private final AssetAttachmentRepository attachmentRepository;
+  private final AssetTraceabilityAttachmentRepository traceabilityAttachmentRepository;
   private final AssetTypeRepository assetTypeRepository;
   private final LocationRepository locationRepository;
   private final SupplierRepository supplierRepository;
@@ -62,6 +75,7 @@ public class AssetService {
   public AssetService(
       AssetRepository assetRepository,
       AssetAttachmentRepository attachmentRepository,
+      AssetTraceabilityAttachmentRepository traceabilityAttachmentRepository,
       AssetTypeRepository assetTypeRepository,
       LocationRepository locationRepository,
       SupplierRepository supplierRepository,
@@ -71,6 +85,7 @@ public class AssetService {
   ) {
     this.assetRepository = assetRepository;
     this.attachmentRepository = attachmentRepository;
+    this.traceabilityAttachmentRepository = traceabilityAttachmentRepository;
     this.assetTypeRepository = assetTypeRepository;
     this.locationRepository = locationRepository;
     this.supplierRepository = supplierRepository;
@@ -130,6 +145,49 @@ public class AssetService {
   public List<AssetTraceability> getTraceability(UUID assetId) {
     getById(assetId);
     return traceabilityRepository.findByAssetIdOrderByOccurredAtDesc(assetId);
+  }
+
+  @Transactional
+  public Asset changeStatus(
+      UUID assetId,
+      AssetStatusChangeRequest request,
+      List<MultipartFile> attachments,
+      AuthenticatedUser authenticatedUser
+  ) {
+    Asset asset = getById(assetId);
+    User user = findUser(authenticatedUser);
+    AssetCondition previousCondition = asset.getCondition();
+    AssetCondition nextCondition = request.nextCondition();
+    String reason = normalizeOptional(request.reason());
+
+    if (reason == null) {
+      throw new BadRequestException("El motivo del cambio de estado es obligatorio.");
+    }
+
+    if (previousCondition == nextCondition) {
+      throw new BadRequestException("El activo ya se encuentra en el estado seleccionado.");
+    }
+
+    validateStatusChangeAttachments(attachments);
+
+    asset.setCondition(nextCondition);
+    applyDecommissionedAtOnUpdate(asset, previousCondition, nextCondition);
+    Asset saved = assetRepository.save(asset);
+
+    TraceabilityEventType eventType = resolveConditionTraceabilityEvent(previousCondition, nextCondition);
+    AssetTraceability traceability = new AssetTraceability(
+        saved,
+        eventType,
+        conditionTraceabilityDescription(eventType),
+        previousCondition.getLabel(),
+        nextCondition.getLabel(),
+        reason,
+        user
+    );
+    applyTraceabilityAttachments(traceability, attachments);
+    traceabilityRepository.save(traceability);
+
+    return getById(saved.getId());
   }
 
   @Transactional
@@ -422,6 +480,21 @@ public class AssetService {
     );
   }
 
+  public com.sigae.api.model.dto.AssetTraceabilityAttachmentFile getTraceabilityAttachment(
+      UUID assetId,
+      UUID traceabilityId,
+      UUID attachmentId
+  ) {
+    AssetTraceabilityAttachment attachment = traceabilityAttachmentRepository
+        .findByIdAndTraceabilityIdAndTraceabilityAssetId(attachmentId, traceabilityId, assetId)
+        .orElseThrow(() -> new NotFoundException("Evidencia del cambio de estado no encontrada."));
+    return new com.sigae.api.model.dto.AssetTraceabilityAttachmentFile(
+        attachment.getFileName(),
+        MediaType.parseMediaType(attachment.getMimeType()),
+        attachment.getContent()
+    );
+  }
+
   private List<AssetAttributeValue> buildAttributeValues(
       AssetType assetType,
       List<AssetAttributeValueRequest> requests
@@ -487,6 +560,67 @@ public class AssetService {
         throw new BadRequestException("No se pudo procesar uno de los adjuntos del activo.");
       }
     }
+  }
+
+  private void applyTraceabilityAttachments(AssetTraceability traceability, List<MultipartFile> attachments) {
+    if (attachments == null || attachments.isEmpty()) {
+      return;
+    }
+
+    for (int index = 0; index < attachments.size(); index++) {
+      MultipartFile file = attachments.get(index);
+      if (file == null || file.isEmpty()) {
+        continue;
+      }
+
+      try {
+        traceability.addAttachment(new AssetTraceabilityAttachment(
+            normalizeFilename(file.getOriginalFilename(), "evidencia-cambio-estado-%d".formatted(index + 1)),
+            resolveStatusChangeMimeType(file),
+            file.getSize(),
+            file.getBytes()
+        ));
+      } catch (IOException exception) {
+        throw new BadRequestException("No se pudo procesar una de las evidencias adjuntas.");
+      }
+    }
+  }
+
+  private void validateStatusChangeAttachments(List<MultipartFile> attachments) {
+    if (attachments == null || attachments.isEmpty()) {
+      return;
+    }
+
+    for (MultipartFile attachment : attachments) {
+      if (attachment == null || attachment.isEmpty()) {
+        continue;
+      }
+
+      if (attachment.getSize() > STATUS_CHANGE_ATTACHMENT_MAX_SIZE_BYTES) {
+        throw new BadRequestException("Cada evidencia adjunta debe pesar como máximo 5MB.");
+      }
+
+      String mimeType = resolveStatusChangeMimeType(attachment);
+      String extension = extractExtension(attachment.getOriginalFilename());
+      if (!STATUS_CHANGE_ALLOWED_CONTENT_TYPES.contains(mimeType) && !STATUS_CHANGE_ALLOWED_EXTENSIONS.contains(extension)) {
+        throw new BadRequestException("Solo se permiten evidencias JPG, PNG o PDF.");
+      }
+    }
+  }
+
+  private String resolveStatusChangeMimeType(MultipartFile file) {
+    return normalizeOptional(file.getContentType()) == null
+        ? MediaType.APPLICATION_OCTET_STREAM_VALUE
+        : Objects.requireNonNull(file.getContentType()).trim().toLowerCase(Locale.ROOT);
+  }
+
+  private String extractExtension(String fileName) {
+    String normalized = normalizeOptional(fileName);
+    if (normalized == null || !normalized.contains(".")) {
+      return "";
+    }
+
+    return normalized.substring(normalized.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
   }
 
   private void removeAttachments(Asset asset, List<UUID> removedAttachmentIds) {

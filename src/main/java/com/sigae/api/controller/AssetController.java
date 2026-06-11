@@ -5,6 +5,8 @@ import com.sigae.api.model.dto.AssetInventoryGroupResponse;
 import com.sigae.api.model.dto.AssetResponse;
 import com.sigae.api.model.dto.AssetAttachmentFile;
 import com.sigae.api.model.dto.AssetTraceabilityResponse;
+import com.sigae.api.model.dto.AssetStatusChangeRequest;
+import com.sigae.api.model.dto.AssetTraceabilityAttachmentFile;
 import com.sigae.api.service.AssetService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -82,6 +84,19 @@ public class AssetController {
         .body(file.content());
   }
 
+  @GetMapping("/{assetId}/traceability/{traceabilityId}/attachments/{attachmentId}")
+  public ResponseEntity<byte[]> downloadTraceabilityAttachment(
+      @PathVariable UUID assetId,
+      @PathVariable UUID traceabilityId,
+      @PathVariable UUID attachmentId
+  ) {
+    AssetTraceabilityAttachmentFile file = assetService.getTraceabilityAttachment(assetId, traceabilityId, attachmentId);
+    return ResponseEntity.ok()
+        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(file.filename()).build().toString())
+        .contentType(file.mediaType())
+        .body(file.content());
+  }
+
   @PostMapping
   @ResponseStatus(HttpStatus.CREATED)
   @PreAuthorize("hasAnyRole('ADMINISTRADOR', 'ENCARGADO')")
@@ -90,7 +105,7 @@ public class AssetController {
       @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments,
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser
   ) {
-    return AssetResponse.from(assetService.create(request, attachments, authenticatedUser));
+    return assetService.getResponseById(assetService.create(request, attachments, authenticatedUser).getId());
   }
 
   @PatchMapping("/{assetId}")
@@ -101,6 +116,19 @@ public class AssetController {
       @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments,
       @AuthenticationPrincipal AuthenticatedUser authenticatedUser
   ) {
-    return AssetResponse.from(assetService.update(assetId, request, attachments, authenticatedUser));
+    return assetService.getResponseById(assetService.update(assetId, request, attachments, authenticatedUser).getId());
+  }
+
+  @PostMapping("/{assetId}/status-change")
+  @PreAuthorize("hasAnyRole('ADMINISTRADOR', 'ENCARGADO')")
+  public AssetResponse changeStatus(
+      @PathVariable UUID assetId,
+      @Valid @RequestPart("payload") AssetStatusChangeRequest request,
+      @RequestPart(value = "attachments", required = false) List<MultipartFile> attachments,
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser
+  ) {
+    return assetService.getResponseById(
+        assetService.changeStatus(assetId, request, attachments, authenticatedUser).getId()
+    );
   }
 }

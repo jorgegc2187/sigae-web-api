@@ -18,10 +18,10 @@ public interface AssetTraceabilityRepository extends JpaRepository<AssetTraceabi
     Instant getOccurredAt();
   }
 
-  @EntityGraph(attributePaths = {"asset", "user"})
+  @EntityGraph(attributePaths = {"asset", "user", "attachments"})
   List<AssetTraceability> findByAssetIdOrderByOccurredAtDesc(UUID assetId);
 
-  @EntityGraph(attributePaths = {"asset", "user"})
+  @EntityGraph(attributePaths = {"asset", "user", "attachments"})
   List<AssetTraceability> findByAssetIdInOrderByOccurredAtDesc(Collection<UUID> assetIds);
 
   @Query("""

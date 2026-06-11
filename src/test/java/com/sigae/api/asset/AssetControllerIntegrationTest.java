@@ -14,6 +14,7 @@ import org.springframework.mock.web.MockMultipartFile;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -434,6 +435,108 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
     Assertions.assertTrue(hasAttributeChange);
   }
 
+  @Test
+  void changeStatusStoresReasonAndEvidenceInTraceability() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+    byte[] evidenceBytes = "pdf-evidencia".getBytes(StandardCharsets.UTF_8);
+
+    String createResponse = mockMvc.perform(multipart("/api/assets")
+            .file(assetPayload("""
+                {
+                  "code": "CMP-2026-090",
+                  "name": "Laptop Lenovo ThinkPad",
+                  "assetTypeId": "%s",
+                  "locationId": "%s",
+                  "condition": "Bueno",
+                  "notes": "Activo operativo",
+                  "attributeValues": [],
+                  "removedAttachmentIds": []
+                }
+                """.formatted(catalog.assetTypeId(), locationId)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isCreated())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    String assetId = objectMapper.readTree(createResponse).get("id").asText();
+
+    mockMvc.perform(multipart("/api/assets/{assetId}/status-change", assetId)
+            .file(assetStatusPayload("""
+                {
+                  "nextCondition": "DADO_DE_BAJA",
+                  "reason": "Daño estructural irreversible"
+                }
+                """))
+            .file(new MockMultipartFile("attachments", "evidencia.pdf", MediaType.APPLICATION_PDF_VALUE, evidenceBytes))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.condition").value("Dado de baja"))
+        .andExpect(jsonPath("$.decommissionedAt").isNotEmpty());
+
+    String traceabilityResponse = mockMvc.perform(get("/api/assets/{assetId}/traceability", assetId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].eventType").value("DECOMMISSIONED"))
+        .andExpect(jsonPath("$[0].reason").value("Daño estructural irreversible"))
+        .andExpect(jsonPath("$[0].attachments", hasSize(1)))
+        .andExpect(jsonPath("$[0].attachments[0].fileName").value("evidencia.pdf"))
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    String attachmentId = objectMapper.readTree(traceabilityResponse).get(0).get("attachments").get(0).get("id").asText();
+    String traceabilityId = objectMapper.readTree(traceabilityResponse).get(0).get("id").asText();
+
+    mockMvc.perform(get("/api/assets/{assetId}/traceability/{traceabilityId}/attachments/{attachmentId}", assetId, traceabilityId, attachmentId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(header().string(HttpHeaders.CONTENT_TYPE, containsString(MediaType.APPLICATION_PDF_VALUE)))
+        .andExpect(content().bytes(evidenceBytes));
+  }
+
+  @Test
+  void changeStatusRejectsEvidenceLargerThanFiveMb() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+
+    String createResponse = mockMvc.perform(multipart("/api/assets")
+            .file(assetPayload("""
+                {
+                  "code": "CMP-2026-091",
+                  "name": "Laptop Lenovo ThinkPad",
+                  "assetTypeId": "%s",
+                  "locationId": "%s",
+                  "condition": "Bueno",
+                  "notes": "Activo operativo",
+                  "attributeValues": [],
+                  "removedAttachmentIds": []
+                }
+                """.formatted(catalog.assetTypeId(), locationId)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isCreated())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    String assetId = objectMapper.readTree(createResponse).get("id").asText();
+    byte[] oversizedEvidence = new byte[6 * 1024 * 1024];
+
+    mockMvc.perform(multipart("/api/assets/{assetId}/status-change", assetId)
+            .file(assetStatusPayload("""
+                {
+                  "nextCondition": "MANTENIMIENTO",
+                  "reason": "Requiere evaluación técnica"
+                }
+                """))
+            .file(new MockMultipartFile("attachments", "evidencia.pdf", MediaType.APPLICATION_PDF_VALUE, oversizedEvidence))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isBadRequest());
+  }
+
   private String createAdminAndLogin() throws Exception {
     createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
     return loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
@@ -532,6 +635,15 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
   }
 
   private MockMultipartFile assetPayload(String content) {
+    return new MockMultipartFile(
+        "payload",
+        "",
+        MediaType.APPLICATION_JSON_VALUE,
+        content.getBytes(StandardCharsets.UTF_8)
+    );
+  }
+
+  private MockMultipartFile assetStatusPayload(String content) {
     return new MockMultipartFile(
         "payload",
         "",
