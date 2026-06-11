@@ -4,6 +4,7 @@ import com.sigae.api.model.dto.AssetReportRowResponse;
 import com.sigae.api.model.dto.LoanReportRowResponse;
 import com.sigae.api.model.dto.ReportExportFile;
 import com.sigae.api.model.dto.ReportExportFormat;
+import com.sigae.api.security.AuthenticatedUser;
 import com.sigae.api.service.ReportService;
 import java.time.LocalDate;
 import java.util.List;
@@ -12,6 +13,7 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -44,14 +46,16 @@ public class ReportController {
       @RequestParam(required = false) UUID locationId,
       @RequestParam(required = false) LocalDate startDate,
       @RequestParam(required = false) LocalDate endDate,
-      @RequestParam(defaultValue = "pdf") String format
+      @RequestParam(defaultValue = "pdf") String format,
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser
   ) {
     ReportExportFile file = reportService.exportAssetRows(
         categoryId,
         locationId,
         startDate,
         endDate,
-        ReportExportFormat.from(format)
+        ReportExportFormat.from(format),
+        authenticatedUser
     );
 
     return ResponseEntity.ok()
@@ -76,14 +80,16 @@ public class ReportController {
       @RequestParam(required = false) UUID locationId,
       @RequestParam(required = false) LocalDate startDate,
       @RequestParam(required = false) LocalDate endDate,
-      @RequestParam(defaultValue = "pdf") String format
+      @RequestParam(defaultValue = "pdf") String format,
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser
   ) {
     ReportExportFile file = reportService.exportLoanRows(
         search,
         locationId,
         startDate,
         endDate,
-        ReportExportFormat.from(format)
+        ReportExportFormat.from(format),
+        authenticatedUser
     );
 
     return ResponseEntity.ok()
