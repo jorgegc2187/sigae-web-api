@@ -25,6 +25,7 @@ import com.sigae.api.repository.AssetTypeRepository;
 import com.sigae.api.repository.LocationRepository;
 import com.sigae.api.repository.SupplierRepository;
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
@@ -144,6 +145,7 @@ public class AssetService {
         request.condition()
     );
     applyOptionalFields(asset, request, resolvedBarcode);
+    applyDecommissionedAtOnCreate(asset);
     asset.syncAttributeValues(buildAttributeValues(assetType, request.attributeValues()));
     applyAttachments(asset, attachments);
 
@@ -157,6 +159,17 @@ public class AssetService {
         null,
         null
     ));
+    if (saved.getCondition() == AssetCondition.DADO_DE_BAJA) {
+      traceabilityRepository.save(new AssetTraceability(
+          saved,
+          TraceabilityEventType.DECOMMISSIONED,
+          "Activo dado de baja.",
+          null,
+          saved.getCondition().getLabel(),
+          saved.getNotes(),
+          null
+      ));
+    }
     return getById(saved.getId());
   }
 
@@ -170,6 +183,7 @@ public class AssetService {
     Location location = getLocation(request.locationId());
     String resolvedCode = requireExistingCode(request.code());
     String resolvedBarcode = resolveBarcodeForUpdate(request, asset, resolvedCode);
+    AssetCondition nextCondition = request.condition();
 
     ensureCodeAvailable(resolvedCode, asset.getId());
     ensureBarcodeAvailable(resolvedBarcode, asset.getId());
@@ -179,8 +193,9 @@ public class AssetService {
     asset.setAssetType(assetType);
     asset.setLocation(location);
     asset.setSupplier(getSupplierOrNull(request.supplierId()));
-    asset.setCondition(request.condition());
+    asset.setCondition(nextCondition);
     applyOptionalFields(asset, request, resolvedBarcode);
+    applyDecommissionedAtOnUpdate(asset, previousCondition, nextCondition);
     asset.syncAttributeValues(buildAttributeValues(assetType, request.attributeValues()));
     removeAttachments(asset, request.removedAttachmentIds());
     applyAttachments(asset, attachments);
@@ -197,10 +212,11 @@ public class AssetService {
     ));
 
     if (previousCondition != saved.getCondition()) {
+      TraceabilityEventType eventType = resolveConditionTraceabilityEvent(previousCondition, saved.getCondition());
       traceabilityRepository.save(new AssetTraceability(
           saved,
-          saved.getCondition() == AssetCondition.DADO_DE_BAJA ? TraceabilityEventType.DECOMMISSIONED : TraceabilityEventType.CONDITION_CHANGED,
-          "Condición del activo actualizada.",
+          eventType,
+          conditionTraceabilityDescription(eventType),
           previousCondition.getLabel(),
           saved.getCondition().getLabel(),
           saved.getNotes(),
@@ -246,6 +262,41 @@ public class AssetService {
     asset.setBarcode(resolvedBarcode);
     asset.setAcquisitionDate(request.acquisitionDate());
     asset.setNotes(normalizeOptional(request.notes()));
+  }
+
+  private void applyDecommissionedAtOnCreate(Asset asset) {
+    asset.setDecommissionedAt(asset.getCondition() == AssetCondition.DADO_DE_BAJA ? Instant.now() : null);
+  }
+
+  private void applyDecommissionedAtOnUpdate(Asset asset, AssetCondition previousCondition, AssetCondition nextCondition) {
+    if (previousCondition != AssetCondition.DADO_DE_BAJA && nextCondition == AssetCondition.DADO_DE_BAJA) {
+      asset.setDecommissionedAt(Instant.now());
+      return;
+    }
+
+    if (previousCondition == AssetCondition.DADO_DE_BAJA && nextCondition != AssetCondition.DADO_DE_BAJA) {
+      asset.setDecommissionedAt(null);
+    }
+  }
+
+  private TraceabilityEventType resolveConditionTraceabilityEvent(AssetCondition previousCondition, AssetCondition nextCondition) {
+    if (previousCondition != AssetCondition.DADO_DE_BAJA && nextCondition == AssetCondition.DADO_DE_BAJA) {
+      return TraceabilityEventType.DECOMMISSIONED;
+    }
+
+    if (previousCondition == AssetCondition.DADO_DE_BAJA && nextCondition != AssetCondition.DADO_DE_BAJA) {
+      return TraceabilityEventType.REACTIVATED;
+    }
+
+    return TraceabilityEventType.CONDITION_CHANGED;
+  }
+
+  private String conditionTraceabilityDescription(TraceabilityEventType eventType) {
+    return switch (eventType) {
+      case DECOMMISSIONED -> "Activo dado de baja.";
+      case REACTIVATED -> "Activo reactivado.";
+      default -> "Condición del activo actualizada.";
+    };
   }
 
   public AssetAttachmentFile getAttachment(UUID assetId, UUID attachmentId) {

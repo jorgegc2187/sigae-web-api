@@ -2,6 +2,7 @@ package com.sigae.api.model.dto;
 
 import com.sigae.api.model.entity.Asset;
 import com.sigae.api.model.entity.AssetCondition;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -14,9 +15,10 @@ public record AssetReportRowResponse(
     String location,
     UUID locationId,
     AssetCondition condition,
-    LocalDate acquisitionDate
+    LocalDate acquisitionDate,
+    Instant decommissionedAt
 ) {
-  public static AssetReportRowResponse from(Asset asset) {
+  public static AssetReportRowResponse from(Asset asset, Instant decommissionedAt) {
     return new AssetReportRowResponse(
         asset.getId(),
         asset.getCode(),
@@ -26,7 +28,12 @@ public record AssetReportRowResponse(
         asset.getLocation().getName(),
         asset.getLocation().getId(),
         asset.getCondition(),
-        asset.getAcquisitionDate()
+        asset.getAcquisitionDate(),
+        decommissionedAt
     );
+  }
+
+  public static AssetReportRowResponse from(Asset asset) {
+    return from(asset, asset.getDecommissionedAt());
   }
 }

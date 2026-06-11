@@ -11,6 +11,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -56,6 +57,9 @@ public class Asset extends BaseEntity {
 
   @Column
   private LocalDate acquisitionDate;
+
+  @Column
+  private Instant decommissionedAt;
 
   @Column(columnDefinition = "text")
   private String notes;
@@ -149,6 +153,14 @@ public class Asset extends BaseEntity {
 
   public void setAcquisitionDate(LocalDate acquisitionDate) {
     this.acquisitionDate = acquisitionDate;
+  }
+
+  public Instant getDecommissionedAt() {
+    return decommissionedAt;
+  }
+
+  public void setDecommissionedAt(Instant decommissionedAt) {
+    this.decommissionedAt = decommissionedAt;
   }
 
   public String getNotes() {

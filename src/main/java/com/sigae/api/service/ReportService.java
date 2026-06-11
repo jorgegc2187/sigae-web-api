@@ -18,9 +18,9 @@ import com.sigae.api.model.dto.LoanReportRowResponse;
 import com.sigae.api.model.dto.ReportExportFile;
 import com.sigae.api.model.dto.ReportExportFormat;
 import com.sigae.api.model.entity.Asset;
+import com.sigae.api.model.entity.AssetCondition;
 import com.sigae.api.model.entity.InstitutionSettings;
 import com.sigae.api.model.entity.Loan;
-import com.sigae.api.model.entity.User;
 import com.sigae.api.repository.AssetRepository;
 import com.sigae.api.repository.CategoryRepository;
 import com.sigae.api.repository.LoanRepository;
@@ -32,6 +32,7 @@ import java.awt.Color;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -71,6 +72,16 @@ public class ReportService {
       "Ubicación",
       "Estado",
       "Fecha alta"
+  };
+  private static final String[] DECOMMISSIONED_ASSET_HEADERS = {
+      "N.°",
+      "Código",
+      "Categoría",
+      "Descripción",
+      "Ubicación",
+      "Estado",
+      "Fecha alta",
+      "Fecha baja"
   };
   private static final String[] LOAN_HEADERS = {
       "N.°",
@@ -302,6 +313,7 @@ public class ReportService {
 
   private byte[] buildAssetsPdf(List<AssetReportRowResponse> rows, ReportDocumentContext context) {
     try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      AssetReportSections sections = splitAssetRows(rows);
       Document document = new Document(PageSize.A4.rotate(), 36, 36, 32, 36);
       PdfWriter.getInstance(document, output);
       document.open();
@@ -309,15 +321,11 @@ public class ReportService {
       addPdfInformativeData(document, context);
       addPdfSection(document, "II. Introducción", context.introduction());
       addPdfTitle(document, "III. Detalle del reporte", 12, Element.ALIGN_LEFT, 8);
-      PdfPTable table = new PdfPTable(ASSET_HEADERS.length);
-      table.setWidthPercentage(100);
-      table.setWidths(new float[] { 0.6f, 1.35f, 1.4f, 2.4f, 1.45f, 1.1f, 1.0f });
-      addPdfHeader(table, ASSET_HEADERS);
-      for (int index = 0; index < rows.size(); index++) {
-        addAssetPdfRow(table, index + 1, rows.get(index));
+      document.add(buildAssetPdfTable(sections.activeRows(), ASSET_HEADERS, new float[] { 0.6f, 1.35f, 1.4f, 2.4f, 1.45f, 1.1f, 1.0f }));
+      if (!sections.decommissionedRows().isEmpty()) {
+        addPdfTitle(document, "Activos dados de baja", 11, Element.ALIGN_LEFT, 8);
+        document.add(buildDecommissionedAssetPdfTable(sections.decommissionedRows()));
       }
-      addEmptyPdfRowIfNeeded(table, ASSET_HEADERS.length, rows.isEmpty());
-      document.add(table);
       addPdfClosingAndSignature(document, context);
       document.close();
       return output.toByteArray();
@@ -412,7 +420,6 @@ public class ReportService {
     addPdfInfoRow(table, "Ciudad", normalizeText(context.settings().getCity(), "No registrado"));
     addPdfInfoRow(table, "Dirección", normalizeText(context.settings().getAddress(), "No registrado"));
     addPdfInfoRow(table, "Emitido por", context.generatedBy().name());
-    addPdfInfoRow(table, "Rol", normalizeText(context.generatedBy().role(), "No registrado"));
     for (ReportFilterLine filter : context.filters()) {
       addPdfInfoRow(table, filter.label(), filter.value());
     }
@@ -466,6 +473,18 @@ public class ReportService {
     table.addCell(pdfCell(formatDate(row.acquisitionDate()), font, Element.ALIGN_CENTER));
   }
 
+  private void addDecommissionedAssetPdfRow(PdfPTable table, int index, AssetReportRowResponse row) {
+    Font font = FontFactory.getFont(FontFactory.HELVETICA, 8);
+    table.addCell(pdfCell(String.valueOf(index), font, Element.ALIGN_CENTER));
+    table.addCell(pdfCell(row.code(), font, Element.ALIGN_LEFT));
+    table.addCell(pdfCell(row.category(), font, Element.ALIGN_LEFT));
+    table.addCell(pdfCell(row.description(), font, Element.ALIGN_LEFT));
+    table.addCell(pdfCell(row.location(), font, Element.ALIGN_LEFT));
+    table.addCell(pdfCell(row.condition().getLabel(), font, Element.ALIGN_CENTER));
+    table.addCell(pdfCell(formatDate(row.acquisitionDate()), font, Element.ALIGN_CENTER));
+    table.addCell(pdfCell(formatInstantDate(row.decommissionedAt(), "No registrada"), font, Element.ALIGN_CENTER));
+  }
+
   private void addLoanPdfRow(PdfPTable table, int index, LoanReportRowResponse row) {
     Font font = FontFactory.getFont(FontFactory.HELVETICA, 8);
     table.addCell(pdfCell(String.valueOf(index), font, Element.ALIGN_CENTER));
@@ -514,22 +533,30 @@ public class ReportService {
     PdfPCell name = pdfCell(context.generatedBy().name(), FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9), Element.ALIGN_CENTER);
     name.setBorder(PdfPCell.NO_BORDER);
     signature.addCell(name);
-    PdfPCell detail = pdfCell(buildGeneratedByDetail(context.generatedBy()), FontFactory.getFont(FontFactory.HELVETICA, 8), Element.ALIGN_CENTER);
-    detail.setBorder(PdfPCell.NO_BORDER);
-    signature.addCell(detail);
     document.add(signature);
   }
 
   private byte[] buildAssetsExcel(List<AssetReportRowResponse> rows, ReportDocumentContext context) {
     try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      AssetReportSections sections = splitAssetRows(rows);
       var sheet = workbook.createSheet("Activos");
       int rowIndex = writeExcelMetadata(sheet, workbook, context);
       writeExcelHeader(sheet.createRow(rowIndex++), workbook, ASSET_HEADERS);
-      for (int index = 0; index < rows.size(); index++) {
+      for (int index = 0; index < sections.activeRows().size(); index++) {
         Row row = sheet.createRow(rowIndex++);
-        writeAssetExcelRow(row, index + 1, rows.get(index));
+        writeAssetExcelRow(row, index + 1, sections.activeRows().get(index));
       }
-      autosize(sheet, ASSET_HEADERS.length);
+      if (!sections.decommissionedRows().isEmpty()) {
+        rowIndex++;
+        Row sectionTitleRow = sheet.createRow(rowIndex++);
+        sectionTitleRow.createCell(0).setCellValue("Activos dados de baja");
+        writeExcelHeader(sheet.createRow(rowIndex++), workbook, DECOMMISSIONED_ASSET_HEADERS);
+        for (int index = 0; index < sections.decommissionedRows().size(); index++) {
+          Row row = sheet.createRow(rowIndex++);
+          writeDecommissionedAssetExcelRow(row, index + 1, sections.decommissionedRows().get(index));
+        }
+      }
+      autosize(sheet, DECOMMISSIONED_ASSET_HEADERS.length);
       workbook.write(output);
       return output.toByteArray();
     } catch (IOException exception) {
@@ -610,6 +637,11 @@ public class ReportService {
     excelRow.createCell(6).setCellValue(formatDate(row.acquisitionDate()));
   }
 
+  private void writeDecommissionedAssetExcelRow(Row excelRow, int index, AssetReportRowResponse row) {
+    writeAssetExcelRow(excelRow, index, row);
+    excelRow.createCell(7).setCellValue(formatInstantDate(row.decommissionedAt(), "No registrada"));
+  }
+
   private void writeLoanExcelRow(Row excelRow, int index, LoanReportRowResponse row) {
     excelRow.createCell(0).setCellValue(index);
     excelRow.createCell(1).setCellValue(row.code());
@@ -629,17 +661,26 @@ public class ReportService {
 
   private byte[] buildAssetsWord(List<AssetReportRowResponse> rows, ReportDocumentContext context) {
     try (XWPFDocument document = new XWPFDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      AssetReportSections sections = splitAssetRows(rows);
       addWordReportHeader(document, context);
       addWordInformativeData(document, context);
       addWordSection(document, "II. Introducción", context.introduction());
       addWordHeading(document, "III. Detalle del reporte");
-      XWPFTable table = document.createTable(rows.isEmpty() ? 2 : rows.size() + 1, ASSET_HEADERS.length);
+      XWPFTable table = document.createTable(sections.activeRows().isEmpty() ? 2 : sections.activeRows().size() + 1, ASSET_HEADERS.length);
       writeWordHeader(table.getRow(0), ASSET_HEADERS);
-      if (rows.isEmpty()) {
+      if (sections.activeRows().isEmpty()) {
         table.getRow(1).getCell(0).setText("No hay registros para los filtros aplicados.");
       } else {
-        for (int index = 0; index < rows.size(); index++) {
-          writeAssetWordRow(table.getRow(index + 1), index + 1, rows.get(index));
+        for (int index = 0; index < sections.activeRows().size(); index++) {
+          writeAssetWordRow(table.getRow(index + 1), index + 1, sections.activeRows().get(index));
+        }
+      }
+      if (!sections.decommissionedRows().isEmpty()) {
+        addWordHeading(document, "Activos dados de baja");
+        XWPFTable decommissionedTable = document.createTable(sections.decommissionedRows().size() + 1, DECOMMISSIONED_ASSET_HEADERS.length);
+        writeWordHeader(decommissionedTable.getRow(0), DECOMMISSIONED_ASSET_HEADERS);
+        for (int index = 0; index < sections.decommissionedRows().size(); index++) {
+          writeDecommissionedAssetWordRow(decommissionedTable.getRow(index + 1), index + 1, sections.decommissionedRows().get(index));
         }
       }
       addWordClosingAndSignature(document, context);
@@ -716,7 +757,6 @@ public class ReportService {
     addWordLine(document, "Dirección: " + normalizeText(context.settings().getAddress(), "No registrado"));
     addWordLine(document, "Fecha de emisión: " + formatDate(LocalDate.now()));
     addWordLine(document, "Emitido por: " + context.generatedBy().name());
-    addWordLine(document, "Rol: " + normalizeText(context.generatedBy().role(), "No registrado"));
     for (ReportFilterLine filter : context.filters()) {
       addWordLine(document, filter.label() + ": " + filter.value());
     }
@@ -758,6 +798,11 @@ public class ReportService {
     wordRow.getCell(6).setText(formatDate(row.acquisitionDate()));
   }
 
+  private void writeDecommissionedAssetWordRow(XWPFTableRow wordRow, int index, AssetReportRowResponse row) {
+    writeAssetWordRow(wordRow, index, row);
+    wordRow.getCell(7).setText(formatInstantDate(row.decommissionedAt(), "No registrada"));
+  }
+
   private void writeLoanWordRow(XWPFTableRow wordRow, int index, LoanReportRowResponse row) {
     wordRow.getCell(0).setText(String.valueOf(index));
     wordRow.getCell(1).setText(row.code());
@@ -783,9 +828,6 @@ public class ReportService {
     run.addBreak();
     run.setBold(true);
     run.setText(context.generatedBy().name());
-    run.addBreak();
-    run.setBold(false);
-    run.setText(buildGeneratedByDetail(context.generatedBy()));
   }
 
   private int wordPictureType(String mimeType) {
@@ -830,6 +872,10 @@ public class ReportService {
     return date == null ? "" : DATE_FORMATTER.format(date);
   }
 
+  private String formatInstantDate(Instant date, String fallback) {
+    return date == null ? fallback : DATE_FORMATTER.format(date.atZone(java.time.ZoneOffset.UTC).toLocalDate());
+  }
+
   private String formatDateRange(LocalDate startDate, LocalDate endDate) {
     if (startDate == null && endDate == null) {
       return "Todos";
@@ -854,19 +900,40 @@ public class ReportService {
         .orElse("");
   }
 
-  private String buildGeneratedByDetail(ReportGeneratedBy generatedBy) {
-    String email = generatedBy.email() == null ? "" : generatedBy.email().trim();
-    String role = generatedBy.role() == null ? "" : generatedBy.role().trim();
-    if (email.isBlank() && role.isBlank()) {
-      return "";
+  private AssetReportSections splitAssetRows(List<AssetReportRowResponse> rows) {
+    List<AssetReportRowResponse> activeRows = new ArrayList<>();
+    List<AssetReportRowResponse> decommissionedRows = new ArrayList<>();
+    for (AssetReportRowResponse row : rows) {
+      if (row.condition() == AssetCondition.DADO_DE_BAJA) {
+        decommissionedRows.add(row);
+      } else {
+        activeRows.add(row);
+      }
     }
-    if (email.isBlank()) {
-      return role;
+    return new AssetReportSections(activeRows, decommissionedRows);
+  }
+
+  private PdfPTable buildAssetPdfTable(List<AssetReportRowResponse> rows, String[] headers, float[] widths) throws DocumentException {
+    PdfPTable table = new PdfPTable(headers.length);
+    table.setWidthPercentage(100);
+    table.setWidths(widths);
+    addPdfHeader(table, headers);
+    for (int index = 0; index < rows.size(); index++) {
+      addAssetPdfRow(table, index + 1, rows.get(index));
     }
-    if (role.isBlank()) {
-      return email;
+    addEmptyPdfRowIfNeeded(table, headers.length, rows.isEmpty());
+    return table;
+  }
+
+  private PdfPTable buildDecommissionedAssetPdfTable(List<AssetReportRowResponse> rows) throws DocumentException {
+    PdfPTable table = new PdfPTable(DECOMMISSIONED_ASSET_HEADERS.length);
+    table.setWidthPercentage(100);
+    table.setWidths(new float[] { 0.55f, 1.25f, 1.3f, 2.2f, 1.35f, 1.0f, 0.95f, 0.95f });
+    addPdfHeader(table, DECOMMISSIONED_ASSET_HEADERS);
+    for (int index = 0; index < rows.size(); index++) {
+      addDecommissionedAssetPdfRow(table, index + 1, rows.get(index));
     }
-    return role + " · " + email;
+    return table;
   }
 
   private String normalizeText(String value, String fallback) {
@@ -883,6 +950,11 @@ public class ReportService {
   ) {}
 
   private record ReportGeneratedBy(String name, String email, String role) {}
+
+  private record AssetReportSections(
+      List<AssetReportRowResponse> activeRows,
+      List<AssetReportRowResponse> decommissionedRows
+  ) {}
 
   private record ReportFilterLine(String label, String value) {}
 }

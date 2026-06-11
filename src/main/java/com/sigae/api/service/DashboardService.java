@@ -185,6 +185,7 @@ public class DashboardService {
       case CONDITION_CHANGED -> "Cambio de estado";
       case LOCATION_CHANGED -> "Cambio de ubicación";
       case DECOMMISSIONED -> "Baja";
+      case REACTIVATED -> "Reactivación";
       case LOANED -> "Préstamo";
       case RETURNED -> "Devolución";
     };

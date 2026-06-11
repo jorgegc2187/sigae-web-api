@@ -2,6 +2,7 @@ package com.sigae.api.model.dto;
 
 import com.sigae.api.model.entity.Asset;
 import com.sigae.api.model.entity.AssetCondition;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -22,6 +23,7 @@ public record AssetResponse(
     String serialNumber,
     String barcode,
     LocalDate acquisitionDate,
+    Instant decommissionedAt,
     String notes,
     List<AssetAttributeValueResponse> attributeValues,
     List<AssetAttachmentResponse> attachments,
@@ -49,6 +51,7 @@ public record AssetResponse(
         asset.getSerialNumber(),
         asset.getBarcode(),
         asset.getAcquisitionDate(),
+        asset.getDecommissionedAt(),
         asset.getNotes(),
         asset.getAttributeValues().stream().map(AssetAttributeValueResponse::from).toList(),
         asset.getAttachments().stream().map(AssetAttachmentResponse::from).toList(),

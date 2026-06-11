@@ -12,6 +12,8 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -144,7 +146,34 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.matchesPattern("CMP-\\d{4}-\\d{3}")))
-        .andExpect(jsonPath("$.barcode").isNotEmpty());
+        .andExpect(jsonPath("$.barcode").isNotEmpty())
+        .andExpect(jsonPath("$.decommissionedAt").value(nullValue()));
+  }
+
+  @Test
+  void createDecommissionedAssetPersistsDecommissionedAt() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+
+    mockMvc.perform(multipart("/api/assets")
+            .file(assetPayload("""
+                {
+                  "code": "CMP-2026-055",
+                  "name": "Laptop Lenovo ThinkPad",
+                  "assetTypeId": "%s",
+                  "locationId": "%s",
+                  "condition": "Dado de baja",
+                  "acquisitionDate": "2026-01-15",
+                  "notes": "Activo dado de baja al registrar",
+                  "attributeValues": [],
+                  "removedAttachmentIds": []
+                }
+                """.formatted(catalog.assetTypeId(), locationId)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.condition").value("Dado de baja"))
+        .andExpect(jsonPath("$.decommissionedAt").isNotEmpty());
   }
 
   @Test
@@ -246,6 +275,60 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.attributeValues.length()").value(1))
         .andExpect(jsonPath("$.attributeValues[0].value").value("Dell"));
+  }
+
+  @Test
+  void updateClearsDecommissionedAtAndRegistersReactivatedTraceability() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+
+    String createResponse = mockMvc.perform(multipart("/api/assets")
+            .file(assetPayload("""
+                {
+                  "code": "CMP-2026-070",
+                  "name": "Laptop Lenovo ThinkPad",
+                  "assetTypeId": "%s",
+                  "locationId": "%s",
+                  "condition": "Dado de baja",
+                  "acquisitionDate": "2026-01-15",
+                  "notes": "Activo inactivo",
+                  "attributeValues": [],
+                  "removedAttachmentIds": []
+                }
+                """.formatted(catalog.assetTypeId(), locationId)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.decommissionedAt").isNotEmpty())
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    String assetId = objectMapper.readTree(createResponse).get("id").asText();
+
+    mockMvc.perform(multipart(HttpMethod.PATCH, "/api/assets/{assetId}", assetId)
+            .file(assetPayload("""
+                {
+                  "code": "CMP-2026-070",
+                  "name": "Laptop Lenovo ThinkPad",
+                  "assetTypeId": "%s",
+                  "locationId": "%s",
+                  "condition": "Bueno",
+                  "acquisitionDate": "2026-01-15",
+                  "notes": "Activo reactivado",
+                  "attributeValues": [],
+                  "removedAttachmentIds": []
+                }
+                """.formatted(catalog.assetTypeId(), locationId)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.condition").value("Bueno"))
+        .andExpect(jsonPath("$.decommissionedAt").value(nullValue()));
+
+    mockMvc.perform(get("/api/assets/{assetId}/traceability", assetId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[*].eventType").value(hasItem("REACTIVATED")));
   }
 
   private String createAdminAndLogin() throws Exception {

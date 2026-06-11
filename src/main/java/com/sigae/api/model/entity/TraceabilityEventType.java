@@ -6,6 +6,7 @@ public enum TraceabilityEventType {
   CONDITION_CHANGED,
   LOCATION_CHANGED,
   DECOMMISSIONED,
+  REACTIVATED,
   LOANED,
   RETURNED
 }
