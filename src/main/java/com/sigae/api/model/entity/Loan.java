@@ -40,6 +40,14 @@ public class Loan extends BaseEntity {
   @JoinColumn(name = "destination_location_id", nullable = false)
   private Location destinationLocation;
 
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "created_by")
+  private User createdBy;
+
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "completed_by")
+  private User completedBy;
+
   @Column(nullable = false, length = 150)
   private String destinationNameSnapshot;
 
@@ -119,6 +127,18 @@ public class Loan extends BaseEntity {
     return destinationLocation;
   }
 
+  public User getCreatedBy() {
+    return createdBy;
+  }
+
+  public void setCreatedBy(User createdBy) {
+    this.createdBy = createdBy;
+  }
+
+  public User getCompletedBy() {
+    return completedBy;
+  }
+
   public String getDestinationNameSnapshot() {
     return destinationNameSnapshot;
   }
@@ -135,8 +155,9 @@ public class Loan extends BaseEntity {
     return completedAt;
   }
 
-  public void markReturned() {
+  public void markReturned(User completedBy) {
     this.completedAt = Instant.now();
+    this.completedBy = completedBy;
   }
 
   public String getNotes() {

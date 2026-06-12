@@ -54,7 +54,10 @@ class LoanControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.code").value(startsWith("PRE-2026-")))
         .andExpect(jsonPath("$.teacher.name").value("Alejandro Cárdenas"))
+        .andExpect(jsonPath("$.createdByName").value("Carlos Mendoza"))
         .andExpect(jsonPath("$.assets.length()").value(1))
+        .andExpect(jsonPath("$.activities[0].title").value("Préstamo registrado"))
+        .andExpect(jsonPath("$.activities[0].actor").value("Carlos Mendoza"))
         .andExpect(jsonPath("$.attachments.length()").value(0))
         .andExpect(jsonPath("$.signatureDataUrl").doesNotExist());
   }
@@ -137,7 +140,9 @@ class LoanControllerIntegrationTest extends IntegrationTestSupport {
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("Devuelto"))
-        .andExpect(jsonPath("$.assets[0].status").value("Bueno"));
+        .andExpect(jsonPath("$.assets[0].status").value("Bueno"))
+        .andExpect(jsonPath("$.activities[0].title").value("Préstamo devuelto"))
+        .andExpect(jsonPath("$.activities[0].actor").value("Carlos Mendoza"));
   }
 
   @Test
@@ -167,6 +172,7 @@ class LoanControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("Devuelto"))
         .andExpect(jsonPath("$.assets[0].status").value("Malo"))
+        .andExpect(jsonPath("$.activities[0].actor").value("Carlos Mendoza"))
         .andExpect(jsonPath("$.activities[*].title").value(hasItem("Incidencia registrada")));
 
     mockMvc.perform(get("/api/assets/{assetId}", assetId)

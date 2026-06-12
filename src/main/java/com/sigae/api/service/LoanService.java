@@ -123,6 +123,7 @@ public class LoanService {
         payload.dueDate(),
         normalizeOptional(payload.notes())
     );
+    loan.setCreatedBy(user);
     assets.forEach(asset -> loan.addAsset(new LoanAsset(asset)));
     applySignature(loan, signature);
     applyAttachments(loan, attachments, payload.attachmentSources());
@@ -151,7 +152,7 @@ public class LoanService {
 
     User user = findUser(authenticatedUser);
     Map<UUID, LoanReturnAssetReviewRequest> reviewsByAssetId = validateReturnRequest(loan, request);
-    loan.markReturned();
+    loan.markReturned(user);
     Loan saved = loanRepository.save(loan);
     saved.getAssets().forEach(loanAsset -> registerReturnTraceability(saved, loanAsset, reviewsByAssetId.get(loanAsset.getAsset().getId()), user));
     liveNotificationPublisher.publishGlobalInvalidation();
@@ -270,6 +271,7 @@ public class LoanService {
   }
 
   private List<LoanActivityResponse> buildActivities(Loan loan) {
+    String createdActor = loan.getCreatedBy() == null ? "No registrado" : loan.getCreatedBy().getFullName();
     LoanActivityResponse created = LoanActivityResponse.of(
         loan.getId(),
         "Préstamo registrado",
@@ -278,7 +280,7 @@ public class LoanService {
             loan.getAssets().size() == 1 ? "" : "s",
             loan.getTeacherNameSnapshot()
         ),
-        "Sistema",
+        createdActor,
         loan.getCreatedAt()
     );
 
@@ -289,11 +291,12 @@ public class LoanService {
       return activities;
     }
 
+    String returnedActor = loan.getCompletedBy() == null ? "No registrado" : loan.getCompletedBy().getFullName();
     LoanActivityResponse returned = LoanActivityResponse.of(
         loan.getId(),
         "Préstamo devuelto",
         "La devolución del préstamo fue registrada correctamente.",
-        "Sistema",
+        returnedActor,
         loan.getCompletedAt()
     );
     activities.add(returned);
@@ -402,7 +405,7 @@ public class LoanService {
                 traceability.getAsset().getCode(),
                 traceability.getReason()
             ),
-            traceability.getUser() == null ? "Sistema" : traceability.getUser().getFullName(),
+            traceability.getUser() == null ? "No registrado" : traceability.getUser().getFullName(),
             traceability.getOccurredAt()
         ))
         .toList();
