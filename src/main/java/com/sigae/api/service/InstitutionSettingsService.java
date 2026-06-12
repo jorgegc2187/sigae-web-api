@@ -84,7 +84,7 @@ public class InstitutionSettingsService {
 
   private InstitutionSettings createDefaultSettings() {
     InstitutionSettings settings = new InstitutionSettings(
-        "SIGAE",
+        "Sistema de Gestión de Activos",
         null,
         null,
         null,

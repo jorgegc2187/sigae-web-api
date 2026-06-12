@@ -17,16 +17,20 @@ import org.springframework.stereotype.Service;
 public class UserInvitationMailService {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(UserInvitationMailService.class);
+  private static final String DEFAULT_VISIBLE_SYSTEM_NAME = "Sistema de Gestión de Activos";
 
   private final JavaMailSender mailSender;
   private final AuthRecoveryProperties recoveryProperties;
+  private final InstitutionSettingsService institutionSettingsService;
 
   public UserInvitationMailService(
       JavaMailSender mailSender,
-      AuthRecoveryProperties recoveryProperties
+      AuthRecoveryProperties recoveryProperties,
+      InstitutionSettingsService institutionSettingsService
   ) {
     this.mailSender = mailSender;
     this.recoveryProperties = recoveryProperties;
+    this.institutionSettingsService = institutionSettingsService;
   }
 
   public void sendInvitationMail(User user, String rawToken) {
@@ -38,10 +42,14 @@ public class UserInvitationMailService {
       MimeMessage message = mailSender.createMimeMessage();
       MimeMessageHelper helper = new MimeMessageHelper(message, true, StandardCharsets.UTF_8.name());
       String resetUrl = buildResetUrl(rawToken);
+      String systemName = resolveVisibleSystemName();
       helper.setFrom(recoveryProperties.mailFrom());
       helper.setTo(user.getEmail());
-      helper.setSubject("Bienvenido a SIGAE - Configura tu contraseña");
-      helper.setText(buildPlainText(user.getFullName(), resetUrl), buildHtml(user.getFullName(), resetUrl));
+      helper.setSubject("Bienvenido a " + systemName + " - Configura tu contraseña");
+      helper.setText(
+          buildPlainText(user.getFullName(), resetUrl, systemName),
+          buildHtml(user.getFullName(), resetUrl, systemName)
+      );
       mailSender.send(message);
     } catch (MessagingException | RuntimeException exception) {
       LOGGER.error(
@@ -62,23 +70,23 @@ public class UserInvitationMailService {
         + URLEncoder.encode(rawToken, StandardCharsets.UTF_8);
   }
 
-  private String buildPlainText(String fullName, String resetUrl) {
+  private String buildPlainText(String fullName, String resetUrl, String systemName) {
     return """
         Hola %s,
 
-        Se creó una cuenta para ti en SIGAE. Usa el siguiente enlace para configurar tu contraseña de acceso:
+        Se creó una cuenta para ti en %s. Usa el siguiente enlace para configurar tu contraseña de acceso:
         %s
 
         Si no esperabas este correo, contacta al administrador del sistema.
-        """.formatted(fullName, resetUrl);
+        """.formatted(fullName, systemName, resetUrl);
   }
 
-  private String buildHtml(String fullName, String resetUrl) {
+  private String buildHtml(String fullName, String resetUrl, String systemName) {
     return """
         <html lang="es">
           <body style="font-family: Arial, sans-serif; color: #0f172a;">
             <p>Hola <strong>%s</strong>,</p>
-            <p>Se creó una cuenta para ti en <strong>SIGAE</strong>. Usa el siguiente enlace para configurar tu contraseña de acceso.</p>
+            <p>Se creó una cuenta para ti en <strong>%s</strong>. Usa el siguiente enlace para configurar tu contraseña de acceso.</p>
             <p>
               <a href="%s" style="display: inline-block; padding: 12px 20px; border-radius: 10px; background: #1d4ed8; color: #ffffff; text-decoration: none; font-weight: 600;">
                 Configurar contraseña
@@ -87,6 +95,15 @@ public class UserInvitationMailService {
             <p>Si no esperabas este correo, contacta al administrador del sistema.</p>
           </body>
         </html>
-        """.formatted(fullName, resetUrl);
+        """.formatted(fullName, systemName, resetUrl);
+  }
+
+  private String resolveVisibleSystemName() {
+    String configuredSystemName = institutionSettingsService.getCurrentSettings().getSystemName();
+    if (configuredSystemName == null || configuredSystemName.isBlank()) {
+      return DEFAULT_VISIBLE_SYSTEM_NAME;
+    }
+
+    return configuredSystemName.trim();
   }
 }

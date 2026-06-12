@@ -29,9 +29,6 @@ public interface AssetRepository extends JpaRepository<Asset, UUID>, JpaSpecific
   @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition", "attachments"})
   Optional<Asset> findByCodeIgnoreCase(String code);
 
-  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition", "attachments"})
-  Optional<Asset> findByBarcodeIgnoreCase(String barcode);
-
   List<Asset> findAllByCodeStartingWithIgnoreCase(String prefix);
 
   @Override

@@ -365,13 +365,12 @@ class LoanControllerIntegrationTest extends IntegrationTestSupport {
                       "locationId": "%s",
                       "condition": "Bueno",
                       "serialNumber": "%s-SN",
-                      "barcode": "BC-%s",
                       "acquisitionDate": "2026-01-15",
                       "notes": "Activo para préstamo",
                       "attributeValues": [],
                       "removedAttachmentIds": []
                     }
-                    """.formatted(code, name, assetTypeId, locationId, code, code).getBytes(StandardCharsets.UTF_8)
+                    """.formatted(code, name, assetTypeId, locationId, code).getBytes(StandardCharsets.UTF_8)
             ))
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated())

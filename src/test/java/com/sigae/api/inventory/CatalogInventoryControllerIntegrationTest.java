@@ -96,7 +96,6 @@ class CatalogInventoryControllerIntegrationTest extends IntegrationTestSupport {
                   "supplierId": "%s",
                   "condition": "Bueno",
                   "serialNumber": "LNV-T14-001",
-                  "barcode": "BC-CMP-2026-001",
                   "acquisitionDate": "2026-01-15",
                   "notes": "Registro inicial",
                   "attributeValues": [

@@ -138,7 +138,6 @@ public class AssetService {
     }
 
     return assetRepository.findByCodeIgnoreCase(normalizedValue)
-        .or(() -> assetRepository.findByBarcodeIgnoreCase(normalizedValue))
         .orElseThrow(() -> new NotFoundException("No se encontró un activo con el valor escaneado."));
   }
 
@@ -197,10 +196,8 @@ public class AssetService {
     Location location = getLocation(request.locationId());
     Supplier supplier = getSupplierOrNull(request.supplierId());
     String resolvedCode = resolveCodeForCreate(request, assetType);
-    String resolvedBarcode = resolveBarcodeForCreate(request, resolvedCode);
 
     ensureCodeAvailable(resolvedCode, null);
-    ensureBarcodeAvailable(resolvedBarcode, null);
 
     Asset asset = new Asset(
         resolvedCode,
@@ -210,7 +207,7 @@ public class AssetService {
         supplier,
         request.condition()
     );
-    applyOptionalFields(asset, request, resolvedBarcode);
+    applyOptionalFields(asset, request);
     applyDecommissionedAtOnCreate(asset);
     asset.syncAttributeValues(buildAttributeValues(assetType, request.attributeValues()));
     applyAttachments(asset, attachments);
@@ -247,7 +244,6 @@ public class AssetService {
     String previousName = asset.getName();
     String previousCode = asset.getCode();
     String previousSerialNumber = asset.getSerialNumber();
-    String previousBarcode = asset.getBarcode();
     java.time.LocalDate previousAcquisitionDate = asset.getAcquisitionDate();
     String previousNotes = asset.getNotes();
     AssetCondition previousCondition = asset.getCondition();
@@ -269,7 +265,6 @@ public class AssetService {
     Location location = getLocation(request.locationId());
     Supplier supplier = getSupplierOrNull(request.supplierId());
     String resolvedCode = requireExistingCode(request.code());
-    String resolvedBarcode = resolveBarcodeForUpdate(request, asset, resolvedCode);
     AssetCondition nextCondition = request.condition();
     List<AssetAttributeValue> nextAttributeValues = buildAttributeValues(assetType, request.attributeValues());
     Map<UUID, AttributeSnapshot> nextAttributes = nextAttributeValues.stream()
@@ -284,7 +279,6 @@ public class AssetService {
         ));
 
     ensureCodeAvailable(resolvedCode, asset.getId());
-    ensureBarcodeAvailable(resolvedBarcode, asset.getId());
 
     asset.setCode(resolvedCode);
     asset.setName(request.name().trim());
@@ -292,7 +286,7 @@ public class AssetService {
     asset.setLocation(location);
     asset.setSupplier(supplier);
     asset.setCondition(nextCondition);
-    applyOptionalFields(asset, request, resolvedBarcode);
+    applyOptionalFields(asset, request);
     applyDecommissionedAtOnUpdate(asset, previousCondition, nextCondition);
     asset.syncAttributeValues(nextAttributeValues);
     removeAttachments(asset, request.removedAttachmentIds());
@@ -303,7 +297,6 @@ public class AssetService {
     registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Codigo del activo actualizado.", previousCode, saved.getCode(), null, user);
     registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Proveedor del activo actualizado.", previousSupplierName, supplier == null ? null : supplier.getName(), null, user);
     registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Serial number del activo actualizado.", previousSerialNumber, saved.getSerialNumber(), null, user);
-    registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Barcode del activo actualizado.", previousBarcode, saved.getBarcode(), null, user);
     registerFieldTraceability(
         saved,
         TraceabilityEventType.UPDATED,
@@ -365,9 +358,8 @@ public class AssetService {
         .orElseThrow(() -> new NotFoundException("Proveedor no encontrado."));
   }
 
-  private void applyOptionalFields(Asset asset, AssetRequest request, String resolvedBarcode) {
+  private void applyOptionalFields(Asset asset, AssetRequest request) {
     asset.setSerialNumber(normalizeOptional(request.serialNumber()));
-    asset.setBarcode(resolvedBarcode);
     asset.setAcquisitionDate(request.acquisitionDate());
     asset.setNotes(normalizeOptional(request.notes()));
   }
@@ -525,19 +517,6 @@ public class AssetService {
         });
   }
 
-  private void ensureBarcodeAvailable(String barcode, UUID currentId) {
-    String normalizedBarcode = normalizeOptional(barcode);
-    if (normalizedBarcode == null) {
-      return;
-    }
-
-    assetRepository.findByBarcodeIgnoreCase(normalizedBarcode)
-        .filter(asset -> !asset.getId().equals(currentId))
-        .ifPresent(asset -> {
-          throw new ConflictException("Ya existe un activo con ese código de barras.");
-        });
-  }
-
   private void applyAttachments(Asset asset, List<MultipartFile> attachments) {
     if (attachments == null || attachments.isEmpty()) {
       return;
@@ -668,20 +647,6 @@ public class AssetService {
     }
 
     return normalizedCode;
-  }
-
-  private String resolveBarcodeForCreate(AssetRequest request, String resolvedCode) {
-    String normalizedBarcode = normalizeOptional(request.barcode());
-    return normalizedBarcode != null ? normalizedBarcode : resolvedCode;
-  }
-
-  private String resolveBarcodeForUpdate(AssetRequest request, Asset asset, String resolvedCode) {
-    if (request.barcode() != null) {
-      return resolveBarcodeForCreate(request, resolvedCode);
-    }
-
-    String existingBarcode = normalizeOptional(asset.getBarcode());
-    return existingBarcode != null ? existingBarcode : resolvedCode;
   }
 
   private String generateCode(AssetType assetType) {

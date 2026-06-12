@@ -182,13 +182,12 @@ class DashboardControllerIntegrationTest extends IntegrationTestSupport {
                   "locationId": "%s",
                   "condition": "%s",
                   "serialNumber": "%s-SN",
-                  "barcode": "BC-%s",
                   "acquisitionDate": "2026-05-20",
                   "notes": "Registro dashboard",
                   "attributeValues": [],
                   "removedAttachmentIds": []
                 }
-                """.formatted(code, name, assetTypeId, locationId, condition, code, code)))
+                """.formatted(code, name, assetTypeId, locationId, condition, code)))
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated())
         .andReturn()
@@ -215,7 +214,6 @@ class DashboardControllerIntegrationTest extends IntegrationTestSupport {
                   "locationId": "%s",
                   "condition": "%s",
                   "serialNumber": "CMP-2026-004-SN",
-                  "barcode": "BC-CMP-2026-004",
                   "acquisitionDate": "2026-05-20",
                   "notes": "Registro dashboard",
                   "attributeValues": [],

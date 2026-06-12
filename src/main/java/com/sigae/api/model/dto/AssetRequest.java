@@ -17,7 +17,6 @@ public record AssetRequest(
     UUID supplierId,
     @NotNull AssetCondition condition,
     @Size(max = 100) String serialNumber,
-    @Size(max = 100) String barcode,
     LocalDate acquisitionDate,
     String notes,
     @Valid List<AssetAttributeValueRequest> attributeValues,

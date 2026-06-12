@@ -52,9 +52,6 @@ public class Asset extends BaseEntity {
   @Column(length = 100)
   private String serialNumber;
 
-  @Column(unique = true, length = 100)
-  private String barcode;
-
   @Column
   private LocalDate acquisitionDate;
 
@@ -137,14 +134,6 @@ public class Asset extends BaseEntity {
 
   public void setSerialNumber(String serialNumber) {
     this.serialNumber = serialNumber;
-  }
-
-  public String getBarcode() {
-    return barcode;
-  }
-
-  public void setBarcode(String barcode) {
-    this.barcode = barcode;
   }
 
   public LocalDate getAcquisitionDate() {

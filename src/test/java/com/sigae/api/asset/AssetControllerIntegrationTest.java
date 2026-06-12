@@ -101,22 +101,6 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
   }
 
   @Test
-  void lookupReturnsAssetByBarcode() throws Exception {
-    String accessToken = createAdminAndLogin();
-    AssetCatalog catalog = createAssetCatalog(accessToken);
-    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
-
-    createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-001", "Laptop Lenovo ThinkPad");
-
-    mockMvc.perform(get("/api/assets/lookup")
-            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-            .param("value", "bc-cmp-2026-001"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.code").value("CMP-2026-001"))
-        .andExpect(jsonPath("$.barcode").value("BC-CMP-2026-001"));
-  }
-
-  @Test
   void lookupReturnsNotFoundWhenAssetDoesNotExist() throws Exception {
     String accessToken = createAdminAndLogin();
 
@@ -148,7 +132,6 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.matchesPattern("CMP-\\d{4}-\\d{3}")))
-        .andExpect(jsonPath("$.barcode").isNotEmpty())
         .andExpect(jsonPath("$.decommissionedAt").value(nullValue()));
   }
 
@@ -623,13 +606,12 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
                   "locationId": "%s",
                   "condition": "Bueno",
                   "serialNumber": "%s-SN",
-                  "barcode": "BC-%s",
                   "acquisitionDate": "2026-01-15",
                   "notes": "Registro agrupado de inventario",
                   "attributeValues": [],
                   "removedAttachmentIds": []
                 }
-                """.formatted(code, name, assetTypeId, locationId, code, code)))
+                """.formatted(code, name, assetTypeId, locationId, code)))
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated());
   }

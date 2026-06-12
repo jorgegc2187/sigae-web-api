@@ -243,13 +243,12 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
                   "locationId": "%s",
                   "condition": "%s",
                   "serialNumber": "LNV-T14-001",
-                  "barcode": "BC-%s",
                   "acquisitionDate": "%s",
                   "notes": "Registro para reporte",
                   "attributeValues": [],
                   "removedAttachmentIds": []
                 }
-                """.formatted(code, assetTypeId, locationId, condition, code, acquisitionDate)))
+                """.formatted(code, assetTypeId, locationId, condition, acquisitionDate)))
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated())
         .andReturn()
@@ -285,13 +284,12 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
                   "locationId": "%s",
                   "condition": "%s",
                   "serialNumber": "LNV-T14-001",
-                  "barcode": "BC-%s",
                   "acquisitionDate": "2026-02-16",
                   "notes": "Registro para reporte",
                   "attributeValues": [],
                   "removedAttachmentIds": []
                 }
-                """.formatted(code, assetTypeId, locationId, condition, code)))
+                """.formatted(code, assetTypeId, locationId, condition)))
             .with(request -> {
               request.setMethod("PATCH");
               return request;

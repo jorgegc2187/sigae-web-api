@@ -354,7 +354,6 @@ public class DevInventorySeedService {
     asset.setSupplier(supplier);
     asset.setCondition(AssetCondition.fromValue(definition.conditionLabel()));
     asset.setSerialNumber(definition.serialNumber());
-    asset.setBarcode("BC-" + definition.code());
     asset.setAcquisitionDate(LocalDate.of(2020 + (index % 4), (index % 8) + 1, 15));
     asset.setNotes(index % 3 == 0 ? "Activo verificado en inventario físico." : null);
     asset.replaceAttributeValues(buildAttributeValues(assetType, definition));
