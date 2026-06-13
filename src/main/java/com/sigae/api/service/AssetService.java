@@ -207,6 +207,7 @@ public class AssetService {
         supplier,
         request.condition()
     );
+    asset.setCreatedBy(user);
     applyOptionalFields(asset, request);
     applyDecommissionedAtOnCreate(asset);
     asset.syncAttributeValues(buildAttributeValues(assetType, request.attributeValues()));

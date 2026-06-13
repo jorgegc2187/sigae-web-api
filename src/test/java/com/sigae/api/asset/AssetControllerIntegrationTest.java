@@ -150,11 +150,49 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
                   "attributeValues": [],
                   "removedAttachmentIds": []
                 }
-                """.formatted(catalog.assetTypeId(), locationId)))
+        """.formatted(catalog.assetTypeId(), locationId)))
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.code").value(org.hamcrest.Matchers.matchesPattern("CMP-\\d{4}-\\d{3}")))
+        .andExpect(jsonPath("$.createdByName").value("Carlos Mendoza"))
         .andExpect(jsonPath("$.decommissionedAt").value(nullValue()));
+  }
+
+  @Test
+  void assetResponsesExposeCreatedByName() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+
+    String response = mockMvc.perform(multipart("/api/assets")
+            .file(assetPayload("""
+                {
+                  "name": "Laptop Lenovo ThinkPad",
+                  "assetTypeId": "%s",
+                  "locationId": "%s",
+                  "condition": "Bueno",
+                  "attributeValues": [],
+                  "removedAttachmentIds": []
+                }
+                """.formatted(catalog.assetTypeId(), locationId)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.createdByName").value("Carlos Mendoza"))
+        .andReturn()
+        .getResponse()
+        .getContentAsString();
+
+    String assetId = objectMapper.readTree(response).get("id").asText();
+
+    mockMvc.perform(get("/api/assets/{assetId}", assetId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.createdByName").value("Carlos Mendoza"));
+
+    mockMvc.perform(get("/api/assets")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].createdByName").value("Carlos Mendoza"));
   }
 
   @Test

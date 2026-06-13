@@ -63,6 +63,21 @@ class LoanControllerIntegrationTest extends IntegrationTestSupport {
   }
 
   @Test
+  void listLoansReturnsCreatedByName() throws Exception {
+    String accessToken = createAdminAndLogin();
+    TeacherFixture teacher = createTeacher(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID assetId = createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-020", "Laptop Lenovo ThinkPad");
+    createLoan(accessToken, teacher.id(), locationId, assetId);
+
+    mockMvc.perform(get("/api/loans")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$[0].createdByName").value("Carlos Mendoza"));
+  }
+
+  @Test
   void createLoanWithSignatureAndAttachmentPersistsBinaryContent() throws Exception {
     String accessToken = createAdminAndLogin();
     TeacherFixture teacher = createTeacher(accessToken);

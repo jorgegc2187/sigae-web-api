@@ -42,6 +42,10 @@ public class Asset extends BaseEntity {
   private Location location;
 
   @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "created_by")
+  private User createdBy;
+
+  @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "supplier_id")
   private Supplier supplier;
 
@@ -114,6 +118,14 @@ public class Asset extends BaseEntity {
 
   public Supplier getSupplier() {
     return supplier;
+  }
+
+  public User getCreatedBy() {
+    return createdBy;
+  }
+
+  public void setCreatedBy(User createdBy) {
+    this.createdBy = createdBy;
   }
 
   public void setSupplier(Supplier supplier) {

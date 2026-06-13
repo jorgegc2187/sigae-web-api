@@ -13,6 +13,7 @@ public record LoanSummaryResponse(
     String destination,
     LocalDate loanDate,
     LocalDate dueDate,
+    String createdByName,
     String status
 ) {
   public static LoanSummaryResponse from(Loan loan, LoanStatusResponse status) {
@@ -24,6 +25,7 @@ public record LoanSummaryResponse(
         loan.getDestinationNameSnapshot(),
         loan.getLoanDate(),
         loan.getDueDate(),
+        loan.getCreatedBy() == null ? null : loan.getCreatedBy().getFullName(),
         status.getLabel()
     );
   }
