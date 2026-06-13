@@ -47,11 +47,31 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(jsonPath("$[0].categoryId").value(catalog.categoryId().toString()))
         .andExpect(jsonPath("$[0].categoryIcon").value("devices"))
         .andExpect(jsonPath("$[0].categoryName").value("Tecnología"))
+        .andExpect(jsonPath("$[0].typeId").value(catalog.assetTypeId().toString()))
+        .andExpect(jsonPath("$[0].typeName").value("Laptop"))
         .andExpect(jsonPath("$[0].totalUnits").value(2))
         .andExpect(jsonPath("$[0].lastEntryDate").isNotEmpty())
         .andExpect(jsonPath("$[0].units[0].code").value("CMP-2026-001"))
         .andExpect(jsonPath("$[0].units[1].code").value("CMP-2026-002"))
         .andExpect(jsonPath("$[0].units[0].lastInspectionDate").isNotEmpty());
+  }
+
+  @Test
+  void groupedInventorySeparatesAssetsWithSameNameButDifferentType() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID desktopTypeId = createAssetType(accessToken, catalog.categoryId(), "Desktop", "desktop_windows").typeId();
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+
+    createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-010", "Equipo de Cómputo");
+    createAsset(accessToken, desktopTypeId, locationId, "DES-2026-011", "Equipo de Cómputo");
+
+    mockMvc.perform(get("/api/assets/grouped")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(2))
+        .andExpect(jsonPath("$[*].typeName").value(hasItem("Laptop")))
+        .andExpect(jsonPath("$[*].typeName").value(hasItem("Desktop")));
   }
 
   @Test
@@ -79,6 +99,8 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(jsonPath("$.displayName").value("Laptop Lenovo ThinkPad"))
         .andExpect(jsonPath("$.categoryId").value(catalog.categoryId().toString()))
         .andExpect(jsonPath("$.categoryIcon").value("devices"))
+        .andExpect(jsonPath("$.typeId").value(catalog.assetTypeId().toString()))
+        .andExpect(jsonPath("$.typeName").value("Laptop"))
         .andExpect(jsonPath("$.totalUnits").value(2))
         .andExpect(jsonPath("$.lastEntryDate").isNotEmpty())
         .andExpect(jsonPath("$.units.length()").value(2));
@@ -561,13 +583,22 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
 
     UUID categoryId = UUID.fromString(objectMapper.readTree(categoryResponse).get("id").asText());
 
+    AssetTypeFixture type = createAssetType(accessToken, categoryId, "Laptop", "laptop_mac");
+    return new AssetCatalog(
+        categoryId,
+        type.typeId(),
+        type.attributeDefinitionId()
+    );
+  }
+
+  private AssetTypeFixture createAssetType(String accessToken, UUID categoryId, String name, String icon) throws Exception {
     String typeResponse = mockMvc.perform(post("/api/categories/%s/types".formatted(categoryId))
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
             .contentType(MediaType.APPLICATION_JSON)
             .content("""
                 {
-                  "name": "Laptop",
-                  "icon": "laptop_mac",
+                  "name": "%s",
+                  "icon": "%s",
                   "attributes": [
                     {
                       "name": "Marca",
@@ -576,15 +607,14 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
                     }
                   ]
                 }
-                """))
+                """.formatted(name, icon)))
         .andExpect(status().isCreated())
         .andReturn()
         .getResponse()
         .getContentAsString();
 
     var typeNode = objectMapper.readTree(typeResponse);
-    return new AssetCatalog(
-        categoryId,
+    return new AssetTypeFixture(
         UUID.fromString(typeNode.get("id").asText()),
         UUID.fromString(typeNode.get("attributes").get(0).get("id").asText())
     );
@@ -635,4 +665,6 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
   }
 
   private record AssetCatalog(UUID categoryId, UUID assetTypeId, UUID attributeDefinitionId) {}
+
+  private record AssetTypeFixture(UUID typeId, UUID attributeDefinitionId) {}
 }

@@ -751,7 +751,9 @@ public class AssetService {
             asset.getName().trim(),
             asset.getAssetType().getCategory().getId(),
             asset.getAssetType().getCategory().getIcon(),
-            asset.getAssetType().getCategory().getName()
+            asset.getAssetType().getCategory().getName(),
+            asset.getAssetType().getId(),
+            asset.getAssetType().getName()
         )));
 
     return groupedAssets.entrySet().stream()
@@ -761,6 +763,8 @@ public class AssetService {
             entry.getKey().categoryId(),
             entry.getKey().categoryIcon(),
             entry.getKey().categoryName(),
+            entry.getKey().typeId(),
+            entry.getKey().typeName(),
             entry.getValue().size(),
             entry.getValue().stream()
                 .map(Asset::getCreatedAt)
@@ -806,7 +810,9 @@ public class AssetService {
       String displayName,
       UUID categoryId,
       String categoryIcon,
-      String categoryName
+      String categoryName,
+      UUID typeId,
+      String typeName
   ) {}
 
   private record AttributeSnapshot(

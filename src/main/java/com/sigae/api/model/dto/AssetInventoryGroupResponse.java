@@ -10,6 +10,8 @@ public record AssetInventoryGroupResponse(
     UUID categoryId,
     String categoryIcon,
     String categoryName,
+    UUID typeId,
+    String typeName,
     int totalUnits,
     Instant lastEntryDate,
     List<AssetInventoryGroupUnitResponse> units
