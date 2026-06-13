@@ -4,16 +4,25 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
+import java.util.Objects;
 
 public final class DotenvPropertiesLoader {
+  private static final String SPRING_PROFILES_ACTIVE = "SPRING_PROFILES_ACTIVE";
+  private static final String SPRING_PROFILES_ACTIVE_PROPERTY = "spring.profiles.active";
 
   private DotenvPropertiesLoader() {}
 
   public static Map<String, Object> loadDefaultProperties(Path dotenvPath) {
     return loadDefaultProperties(dotenvPath, System.getenv(), System.getProperties());
+  }
+
+  public static boolean shouldLoadForDevProfile(String[] args) {
+    return shouldLoadForDevProfile(args, System.getenv(), System.getProperties());
   }
 
   static Map<String, Object> loadDefaultProperties(
@@ -57,6 +66,28 @@ public final class DotenvPropertiesLoader {
     return properties;
   }
 
+  static boolean shouldLoadForDevProfile(
+      String[] args,
+      Map<String, String> environmentVariables,
+      Map<?, ?> systemProperties
+  ) {
+    String activeProfiles = firstNonBlank(
+        extractActiveProfiles(args),
+        Objects.toString(systemProperties.get(SPRING_PROFILES_ACTIVE_PROPERTY), null),
+        environmentVariables.get(SPRING_PROFILES_ACTIVE)
+    );
+
+    if (activeProfiles == null) {
+      return false;
+    }
+
+    return Arrays.stream(activeProfiles.split(","))
+        .map(String::trim)
+        .filter(profile -> !profile.isEmpty())
+        .map(profile -> profile.toLowerCase(Locale.ROOT))
+        .anyMatch("dev"::equals);
+  }
+
   private static String stripWrappingQuotes(String value) {
     if (value.length() >= 2) {
       if ((value.startsWith("\"") && value.endsWith("\""))
@@ -66,5 +97,37 @@ public final class DotenvPropertiesLoader {
     }
 
     return value;
+  }
+
+  private static String extractActiveProfiles(String[] args) {
+    if (args == null) {
+      return null;
+    }
+
+    for (String rawArg : args) {
+      if (rawArg == null) {
+        continue;
+      }
+
+      String arg = rawArg.trim();
+      if (arg.startsWith("--" + SPRING_PROFILES_ACTIVE_PROPERTY + "=")) {
+        return arg.substring(("--" + SPRING_PROFILES_ACTIVE_PROPERTY + "=").length()).trim();
+      }
+      if (arg.startsWith("-D" + SPRING_PROFILES_ACTIVE_PROPERTY + "=")) {
+        return arg.substring(("-D" + SPRING_PROFILES_ACTIVE_PROPERTY + "=").length()).trim();
+      }
+    }
+
+    return null;
+  }
+
+  private static String firstNonBlank(String... candidates) {
+    for (String candidate : candidates) {
+      if (candidate != null && !candidate.isBlank()) {
+        return candidate;
+      }
+    }
+
+    return null;
   }
 }

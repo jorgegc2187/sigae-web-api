@@ -21,8 +21,24 @@ Usa `.env.example` como referencia para desarrollo local. No versionar archivos 
 
 ## Correo local
 
-La API carga `.env` automaticamente al arrancar en desarrollo. Las variables reales del entorno
-siguen teniendo prioridad sobre `.env`.
+La API carga `.env` automaticamente solo cuando el perfil `dev` fue solicitado explicitamente.
+Las variables reales del entorno siguen teniendo prioridad sobre `.env`.
+
+## Arranque por entorno
+
+Desarrollo local:
+
+1. Crear `.env` a partir de `.env.example`.
+2. Arrancar con `SPRING_PROFILES_ACTIVE=dev`.
+3. La API usara `application-dev.yml` y tomara valores faltantes desde `.env`.
+
+Produccion:
+
+1. Arrancar con `SPRING_PROFILES_ACTIVE=prod`.
+2. Inyectar variables reales desde el entorno o la plataforma de despliegue.
+3. No depender de `.env` para el arranque del servicio.
+
+Si no se define un perfil explicito, la API ya no asume `dev` por omision.
 
 Para Gmail:
 

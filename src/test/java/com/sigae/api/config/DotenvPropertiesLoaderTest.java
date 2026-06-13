@@ -64,4 +64,31 @@ class DotenvPropertiesLoaderTest {
         .doesNotContainKey("MAIL_HOST")
         .doesNotContainKey("MAIL_USERNAME");
   }
+
+  @Test
+  void loadsDotenvOnlyWhenDevProfileIsExplicitlyRequested() {
+    assertThat(DotenvPropertiesLoader.shouldLoadForDevProfile(
+        new String[] { "--spring.profiles.active=dev" },
+        Map.of(),
+        Map.of()
+    )).isTrue();
+
+    assertThat(DotenvPropertiesLoader.shouldLoadForDevProfile(
+        new String[0],
+        Map.of("SPRING_PROFILES_ACTIVE", "prod"),
+        Map.of()
+    )).isFalse();
+
+    assertThat(DotenvPropertiesLoader.shouldLoadForDevProfile(
+        new String[0],
+        Map.of(),
+        Map.of("spring.profiles.active", "dev,local")
+    )).isTrue();
+
+    assertThat(DotenvPropertiesLoader.shouldLoadForDevProfile(
+        new String[0],
+        Map.of(),
+        Map.of()
+    )).isFalse();
+  }
 }
