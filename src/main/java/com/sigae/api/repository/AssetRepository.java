@@ -37,6 +37,10 @@ public interface AssetRepository extends JpaRepository<Asset, UUID>, JpaSpecific
 
   @Override
   @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition", "attachments"})
+  java.util.List<Asset> findAll(Sort sort);
+
+  @Override
+  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition", "attachments"})
   Optional<Asset> findById(UUID id);
 
   @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier"})

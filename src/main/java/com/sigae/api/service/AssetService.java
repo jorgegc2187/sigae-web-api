@@ -43,6 +43,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -104,7 +105,9 @@ public class AssetService {
   }
 
   public List<com.sigae.api.model.dto.AssetResponse> findAllResponses() {
-    return assetRepository.findAll().stream().map(this::toResponse).toList();
+    return assetRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt")).stream()
+        .map(this::toResponse)
+        .toList();
   }
 
   public com.sigae.api.model.dto.AssetResponse getResponseById(UUID id) {

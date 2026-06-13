@@ -90,6 +90,10 @@ public class LoanService {
         : loanRepository.search(normalizedSearch);
     return loans.stream()
         .filter(loan -> matchesStatus(loan, normalizedStatus))
+        .sorted(
+            Comparator.comparing(Loan::getLoanDate, Comparator.nullsLast(Comparator.naturalOrder())).reversed()
+                .thenComparing(Loan::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed()
+        )
         .map(loan -> LoanSummaryResponse.from(loan, statusOf(loan)))
         .toList();
   }
