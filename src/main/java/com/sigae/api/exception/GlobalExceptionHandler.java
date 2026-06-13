@@ -89,6 +89,22 @@ public class GlobalExceptionHandler {
         .body(ApiError.of(401, "Unauthorized", exception.getMessage(), request.getRequestURI()));
   }
 
+  @ExceptionHandler(RateLimitExceededException.class)
+  ResponseEntity<ApiError> handleRateLimitExceeded(
+      RateLimitExceededException exception,
+      HttpServletRequest request
+  ) {
+    return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+        .body(ApiError.of(
+            429,
+            "Too Many Requests",
+            exception.getMessage(),
+            request.getRequestURI(),
+            exception.getCode(),
+            exception.getRetryAfterSeconds()
+        ));
+  }
+
   @ExceptionHandler(AuthorizationDeniedException.class)
   ResponseEntity<ApiError> handleAccessDenied(
       AuthorizationDeniedException exception,

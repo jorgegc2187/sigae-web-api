@@ -20,8 +20,10 @@ import com.sigae.api.model.entity.UserStatus;
 import com.sigae.api.repository.RefreshTokenRepository;
 import com.sigae.api.security.AuthenticatedUser;
 import com.sigae.api.security.JwtService;
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -41,6 +43,7 @@ public class AuthService {
   private final TokenHashingService tokenHashingService;
   private final MfaService mfaService;
   private final LiveNotificationPublisher liveNotificationPublisher;
+  private final AuthAbuseProtectionService authAbuseProtectionService;
 
   public AuthService(
       UserService userService,
@@ -52,7 +55,8 @@ public class AuthService {
       PasswordResetMailService passwordResetMailService,
       TokenHashingService tokenHashingService,
       MfaService mfaService,
-      LiveNotificationPublisher liveNotificationPublisher
+      LiveNotificationPublisher liveNotificationPublisher,
+      AuthAbuseProtectionService authAbuseProtectionService
   ) {
     this.userService = userService;
     this.passwordEncoder = passwordEncoder;
@@ -64,17 +68,22 @@ public class AuthService {
     this.tokenHashingService = tokenHashingService;
     this.mfaService = mfaService;
     this.liveNotificationPublisher = liveNotificationPublisher;
+    this.authAbuseProtectionService = authAbuseProtectionService;
   }
 
   @Transactional
-  public Object login(String email, String rawPassword) {
+  public Object login(String email, String rawPassword, HttpServletRequest request) {
+    authAbuseProtectionService.checkLoginIpAllowed(request);
+    String normalizedEmail = normalizeEmail(email);
     User user;
     try {
-      user = userService.getByEmailOrThrow(email);
+      user = userService.getByEmailOrThrow(normalizedEmail);
     } catch (NotFoundException exception) {
       throw new BadCredentialsException("Credenciales inválidas.");
     }
+    authAbuseProtectionService.ensureAccountNotLocked(user);
     validateLogin(user, rawPassword);
+    userService.clearFailedLoginState(user);
     if (mfaService.requiresEnrollment(user)) {
       return mfaService.createLoginChallenge(user, MfaChallengePurpose.ENROLL, "MFA_ENROLL_REQUIRED");
     }
@@ -86,26 +95,30 @@ public class AuthService {
   }
 
   @Transactional
-  public MfaEnrollStartResponse startMfaEnrollment(MfaEnrollStartRequest request) {
+  public MfaEnrollStartResponse startMfaEnrollment(MfaEnrollStartRequest request, HttpServletRequest servletRequest) {
+    authAbuseProtectionService.checkMfaStartAllowed(request.challengeToken(), servletRequest);
     return mfaService.startEnrollment(request.challengeToken());
   }
 
   @Transactional
-  public AuthResponse confirmMfaEnrollment(MfaEnrollConfirmRequest request) {
+  public AuthResponse confirmMfaEnrollment(MfaEnrollConfirmRequest request, HttpServletRequest servletRequest) {
+    authAbuseProtectionService.checkMfaVerifyAllowed(request.challengeToken(), servletRequest);
     User user = mfaService.confirmEnrollment(request.challengeToken(), request.code());
     userService.markLoginSuccess(user);
     return issueTokens(user);
   }
 
   @Transactional
-  public AuthResponse verifyMfa(MfaVerifyRequest request) {
+  public AuthResponse verifyMfa(MfaVerifyRequest request, HttpServletRequest servletRequest) {
+    authAbuseProtectionService.checkMfaVerifyAllowed(request.challengeToken(), servletRequest);
     User user = mfaService.verifyLogin(request.challengeToken(), request.code());
     userService.markLoginSuccess(user);
     return issueTokens(user);
   }
 
   @Transactional
-  public AuthResponse refresh(String rawRefreshToken) {
+  public AuthResponse refresh(String rawRefreshToken, HttpServletRequest request) {
+    authAbuseProtectionService.checkRefreshAllowed(rawRefreshToken, request);
     RefreshToken refreshToken = refreshTokenRepository.findByTokenHash(tokenHashingService.sha256(rawRefreshToken))
         .orElseThrow(() -> new BadCredentialsException("Refresh token inválido."));
 
@@ -135,19 +148,22 @@ public class AuthService {
   }
 
   @Transactional
-  public void requestPasswordReset(ForgotPasswordRequest request) {
+  public void requestPasswordReset(ForgotPasswordRequest request, HttpServletRequest servletRequest) {
+    authAbuseProtectionService.checkForgotPasswordAllowed(request.email(), servletRequest);
     userService.findByEmail(request.email()).ifPresent(user -> {
       String rawToken = passwordSetupTokenService.issuePasswordResetToken(user);
       passwordResetMailService.sendPasswordResetMail(user, rawToken);
     });
   }
 
-  public void validateResetPasswordToken(String token) {
+  public void validateResetPasswordToken(String token, HttpServletRequest request) {
+    authAbuseProtectionService.checkResetPasswordValidateAllowed(token, request);
     passwordSetupTokenService.validateToken(token);
   }
 
   @Transactional
-  public void resetPassword(ResetPasswordRequest request) {
+  public void resetPassword(ResetPasswordRequest request, HttpServletRequest servletRequest) {
+    authAbuseProtectionService.checkResetPasswordSubmitAllowed(request.token(), servletRequest);
     if (!request.newPassword().equals(request.confirmPassword())) {
       throw new BadRequestException("La confirmación de contraseña no coincide.");
     }
@@ -173,6 +189,7 @@ public class AuthService {
     validateUserIsActive(user);
 
     if (!passwordEncoder.matches(rawPassword, user.getPasswordHash())) {
+      authAbuseProtectionService.registerFailedLogin(user);
       throw new BadCredentialsException("Credenciales inválidas.");
     }
   }
@@ -227,5 +244,9 @@ public class AuthService {
           "La contraseña debe tener al menos 8 caracteres, una mayúscula, un número y un carácter especial."
       );
     }
+  }
+
+  private String normalizeEmail(String email) {
+    return email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
   }
 }

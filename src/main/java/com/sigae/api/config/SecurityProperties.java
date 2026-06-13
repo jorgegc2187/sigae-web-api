@@ -19,7 +19,9 @@ public record SecurityProperties(
     @Valid
     Mfa mfa,
     @Valid
-    Cors cors
+    Cors cors,
+    @Valid
+    AbuseProtection abuseProtection
 ) {
 
   public record Jwt(
@@ -50,5 +52,71 @@ public record SecurityProperties(
   public record Cors(
       @NotEmpty
       List<String> allowedOrigins
+  ) {}
+
+  public record AbuseProtection(
+      @Valid
+      Login login,
+      @Valid
+      ForgotPassword forgotPassword,
+      @Valid
+      ResetPassword resetPassword,
+      @Valid
+      Refresh refresh,
+      @Valid
+      MfaProtection mfa
+  ) {}
+
+  public record Login(
+      @Min(1)
+      int accountMaxAttempts,
+      @NotNull
+      Duration accountWindow,
+      @NotNull
+      Duration lockDuration,
+      @Min(1)
+      int ipMaxAttempts,
+      @NotNull
+      Duration ipWindow
+  ) {}
+
+  public record ForgotPassword(
+      @Min(1)
+      int emailMaxAttempts,
+      @NotNull
+      Duration emailWindow,
+      @Min(1)
+      int ipMaxAttempts,
+      @NotNull
+      Duration ipWindow
+  ) {}
+
+  public record ResetPassword(
+      @Min(1)
+      int validateMaxAttempts,
+      @NotNull
+      Duration validateWindow,
+      @Min(1)
+      int submitMaxAttempts,
+      @NotNull
+      Duration submitWindow
+  ) {}
+
+  public record Refresh(
+      @Min(1)
+      int tokenMaxAttempts,
+      @NotNull
+      Duration tokenWindow
+  ) {}
+
+  public record MfaProtection(
+      @Min(1)
+      int startMaxAttempts,
+      @NotNull
+      Duration startWindow,
+      @Min(1)
+      int verifyMaxAttempts,
+      @NotNull
+      Duration verifyWindow
   ) {}
 }

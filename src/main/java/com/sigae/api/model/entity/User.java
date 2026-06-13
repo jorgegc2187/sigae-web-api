@@ -37,6 +37,15 @@ public class User extends BaseEntity {
   @Column
   private Instant lastAccessAt;
 
+  @Column(nullable = false)
+  private int failedLoginAttempts;
+
+  @Column
+  private Instant firstFailedLoginAt;
+
+  @Column
+  private Instant lockedUntil;
+
   @ManyToMany(fetch = FetchType.LAZY)
   @JoinTable(
       name = "user_location",
@@ -101,6 +110,30 @@ public class User extends BaseEntity {
 
   public void setLastAccessAt(Instant lastAccessAt) {
     this.lastAccessAt = lastAccessAt;
+  }
+
+  public int getFailedLoginAttempts() {
+    return failedLoginAttempts;
+  }
+
+  public void setFailedLoginAttempts(int failedLoginAttempts) {
+    this.failedLoginAttempts = failedLoginAttempts;
+  }
+
+  public Instant getFirstFailedLoginAt() {
+    return firstFailedLoginAt;
+  }
+
+  public void setFirstFailedLoginAt(Instant firstFailedLoginAt) {
+    this.firstFailedLoginAt = firstFailedLoginAt;
+  }
+
+  public Instant getLockedUntil() {
+    return lockedUntil;
+  }
+
+  public void setLockedUntil(Instant lockedUntil) {
+    this.lockedUntil = lockedUntil;
   }
 
   public Set<Location> getLocations() {

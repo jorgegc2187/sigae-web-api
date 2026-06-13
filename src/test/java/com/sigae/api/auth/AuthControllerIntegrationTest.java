@@ -223,6 +223,47 @@ class AuthControllerIntegrationTest extends IntegrationTestSupport {
   }
 
   @Test
+  void loginLocksAccountAfterConfiguredNumberOfFailedAttempts() throws Exception {
+    createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+
+    for (int attempt = 1; attempt <= 4; attempt++) {
+      mockMvc.perform(post("/api/auth/login")
+              .contentType(MediaType.APPLICATION_JSON)
+              .content("""
+                  {
+                    "email": "admin@sigae.edu.pe",
+                    "password": "clave-incorrecta"
+                  }
+                  """))
+          .andExpect(status().isUnauthorized())
+          .andExpect(jsonPath("$.message").value("Credenciales inválidas."));
+    }
+
+    mockMvc.perform(post("/api/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "email": "admin@sigae.edu.pe",
+                  "password": "clave-incorrecta"
+                }
+                """))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("AUTH_ACCOUNT_LOCKED"))
+        .andExpect(jsonPath("$.retryAfterSeconds").isNumber());
+
+    mockMvc.perform(post("/api/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "email": "admin@sigae.edu.pe",
+                  "password": "admin123456"
+                }
+                """))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("AUTH_ACCOUNT_LOCKED"));
+  }
+
+  @Test
   void forgotPasswordCreatesResetRequestForExistingUser() throws Exception {
     createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
 
@@ -252,6 +293,34 @@ class AuthControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(jsonPath("$.message").value(FORGOT_PASSWORD_SUCCESS_MESSAGE));
 
     org.assertj.core.api.Assertions.assertThat(passwordResetRequestRepository.findAll()).isEmpty();
+  }
+
+  @Test
+  void forgotPasswordReturnsTooManyRequestsWhenEmailLimitIsExceeded() throws Exception {
+    createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      mockMvc.perform(post("/api/auth/forgot-password")
+              .contentType(MediaType.APPLICATION_JSON)
+              .content("""
+                  {
+                    "email": "admin@sigae.edu.pe"
+                  }
+                  """))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.message").value(FORGOT_PASSWORD_SUCCESS_MESSAGE));
+    }
+
+    mockMvc.perform(post("/api/auth/forgot-password")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "email": "admin@sigae.edu.pe"
+                }
+                """))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("AUTH_RATE_LIMITED"))
+        .andExpect(jsonPath("$.retryAfterSeconds").isNumber());
   }
 
   @Test
@@ -460,6 +529,39 @@ class AuthControllerIntegrationTest extends IntegrationTestSupport {
                 """.formatted(rawToken)))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.message").value("El enlace de recuperación es inválido o ya expiró."));
+  }
+
+  @Test
+  void validateResetPasswordTokenReturnsTooManyRequestsWhenLimitIsExceeded() throws Exception {
+    var user = createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    String rawToken = "valid-reset-token-for-rate-limit";
+    passwordResetRequestRepository.save(new PasswordResetRequest(
+        user,
+        tokenHashingService.sha256(rawToken),
+        Instant.now().plusSeconds(1800)
+    ));
+
+    for (int attempt = 1; attempt <= 10; attempt++) {
+      mockMvc.perform(post("/api/auth/reset-password/validate")
+              .contentType(MediaType.APPLICATION_JSON)
+              .content("""
+                  {
+                    "token": "%s"
+                  }
+                  """.formatted(rawToken)))
+          .andExpect(status().isNoContent());
+    }
+
+    mockMvc.perform(post("/api/auth/reset-password/validate")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content("""
+                {
+                  "token": "%s"
+                }
+                """.formatted(rawToken)))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("AUTH_RATE_LIMITED"))
+        .andExpect(jsonPath("$.retryAfterSeconds").isNumber());
   }
 
   private String loginAndReadChallengeToken(String email, String password, String expectedType) throws Exception {

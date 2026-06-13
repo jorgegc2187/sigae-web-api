@@ -54,6 +54,31 @@ app:
       issuer: ${MFA_ISSUER:SIGAE}
     cors:
       allowed-origins: ${CORS_ALLOWED_ORIGINS}
+    abuse-protection:
+      login:
+        account-max-attempts: ${AUTH_LOGIN_ACCOUNT_MAX_ATTEMPTS:5}
+        account-window: ${AUTH_LOGIN_ACCOUNT_WINDOW:PT15M}
+        lock-duration: ${AUTH_LOGIN_LOCK_DURATION:PT15M}
+        ip-max-attempts: ${AUTH_LOGIN_IP_MAX_ATTEMPTS:20}
+        ip-window: ${AUTH_LOGIN_IP_WINDOW:PT15M}
+      forgot-password:
+        email-max-attempts: ${AUTH_FORGOT_PASSWORD_EMAIL_MAX_ATTEMPTS:3}
+        email-window: ${AUTH_FORGOT_PASSWORD_EMAIL_WINDOW:PT30M}
+        ip-max-attempts: ${AUTH_FORGOT_PASSWORD_IP_MAX_ATTEMPTS:10}
+        ip-window: ${AUTH_FORGOT_PASSWORD_IP_WINDOW:PT30M}
+      reset-password:
+        validate-max-attempts: ${AUTH_RESET_PASSWORD_VALIDATE_MAX_ATTEMPTS:10}
+        validate-window: ${AUTH_RESET_PASSWORD_VALIDATE_WINDOW:PT15M}
+        submit-max-attempts: ${AUTH_RESET_PASSWORD_SUBMIT_MAX_ATTEMPTS:5}
+        submit-window: ${AUTH_RESET_PASSWORD_SUBMIT_WINDOW:PT15M}
+      refresh:
+        token-max-attempts: ${AUTH_REFRESH_TOKEN_MAX_ATTEMPTS:30}
+        token-window: ${AUTH_REFRESH_TOKEN_WINDOW:PT15M}
+      mfa:
+        start-max-attempts: ${AUTH_MFA_START_MAX_ATTEMPTS:3}
+        start-window: ${AUTH_MFA_START_WINDOW:PT15M}
+        verify-max-attempts: ${AUTH_MFA_VERIFY_MAX_ATTEMPTS:5}
+        verify-window: ${AUTH_MFA_VERIFY_WINDOW:PT10M}
   bootstrap:
     admin:
       enabled: false

@@ -71,6 +71,7 @@ public abstract class IntegrationTestSupport {
     jdbcTemplate.update("delete from category");
     jdbcTemplate.update("delete from mfa_challenge");
     jdbcTemplate.update("delete from user_mfa_settings");
+    jdbcTemplate.update("delete from auth_rate_limit_bucket");
     refreshTokenRepository.deleteAll();
     passwordResetRequestRepository.deleteAll();
     userRepository.deleteAll();

@@ -15,6 +15,7 @@ import com.sigae.api.model.dto.ResetPasswordRequest;
 import com.sigae.api.model.dto.ValidateResetPasswordTokenRequest;
 import com.sigae.api.service.AuthService;
 import com.sigae.api.security.AuthenticatedUser;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -36,28 +37,34 @@ public class AuthController {
   }
 
   @PostMapping("/login")
-  public Object login(@Valid @RequestBody LoginRequest request) {
-    return authService.login(request.email(), request.password());
+  public Object login(@Valid @RequestBody LoginRequest request, HttpServletRequest servletRequest) {
+    return authService.login(request.email(), request.password(), servletRequest);
   }
 
   @PostMapping("/mfa/enroll/start")
-  public MfaEnrollStartResponse startMfaEnrollment(@Valid @RequestBody MfaEnrollStartRequest request) {
-    return authService.startMfaEnrollment(request);
+  public MfaEnrollStartResponse startMfaEnrollment(
+      @Valid @RequestBody MfaEnrollStartRequest request,
+      HttpServletRequest servletRequest
+  ) {
+    return authService.startMfaEnrollment(request, servletRequest);
   }
 
   @PostMapping("/mfa/enroll/confirm")
-  public AuthResponse confirmMfaEnrollment(@Valid @RequestBody MfaEnrollConfirmRequest request) {
-    return authService.confirmMfaEnrollment(request);
+  public AuthResponse confirmMfaEnrollment(
+      @Valid @RequestBody MfaEnrollConfirmRequest request,
+      HttpServletRequest servletRequest
+  ) {
+    return authService.confirmMfaEnrollment(request, servletRequest);
   }
 
   @PostMapping("/mfa/verify")
-  public AuthResponse verifyMfa(@Valid @RequestBody MfaVerifyRequest request) {
-    return authService.verifyMfa(request);
+  public AuthResponse verifyMfa(@Valid @RequestBody MfaVerifyRequest request, HttpServletRequest servletRequest) {
+    return authService.verifyMfa(request, servletRequest);
   }
 
   @PostMapping("/refresh")
-  public AuthResponse refresh(@Valid @RequestBody RefreshTokenRequest request) {
-    return authService.refresh(request.refreshToken());
+  public AuthResponse refresh(@Valid @RequestBody RefreshTokenRequest request, HttpServletRequest servletRequest) {
+    return authService.refresh(request.refreshToken(), servletRequest);
   }
 
   @PostMapping("/logout")
@@ -72,8 +79,11 @@ public class AuthController {
   }
 
   @PostMapping("/forgot-password")
-  public ForgotPasswordResponse forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
-    authService.requestPasswordReset(request);
+  public ForgotPasswordResponse forgotPassword(
+      @Valid @RequestBody ForgotPasswordRequest request,
+      HttpServletRequest servletRequest
+  ) {
+    authService.requestPasswordReset(request, servletRequest);
     return new ForgotPasswordResponse(
         "Si el correo está registrado, recibirás instrucciones de recuperación en los próximos minutos."
     );
@@ -81,13 +91,16 @@ public class AuthController {
 
   @PostMapping("/reset-password")
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  public void resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
-    authService.resetPassword(request);
+  public void resetPassword(@Valid @RequestBody ResetPasswordRequest request, HttpServletRequest servletRequest) {
+    authService.resetPassword(request, servletRequest);
   }
 
   @PostMapping("/reset-password/validate")
   @ResponseStatus(HttpStatus.NO_CONTENT)
-  public void validateResetPasswordToken(@Valid @RequestBody ValidateResetPasswordTokenRequest request) {
-    authService.validateResetPasswordToken(request.token());
+  public void validateResetPasswordToken(
+      @Valid @RequestBody ValidateResetPasswordTokenRequest request,
+      HttpServletRequest servletRequest
+  ) {
+    authService.validateResetPasswordToken(request.token(), servletRequest);
   }
 }

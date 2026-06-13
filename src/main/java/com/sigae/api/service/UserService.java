@@ -14,6 +14,7 @@ import com.sigae.api.model.entity.UserStatus;
 import com.sigae.api.repository.LocationRepository;
 import com.sigae.api.repository.UserRepository;
 import com.sigae.api.security.AuthenticatedUser;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,6 +38,7 @@ public class UserService {
   private final PasswordSetupTokenService passwordSetupTokenService;
   private final UserInvitationMailService userInvitationMailService;
   private final LiveNotificationPublisher liveNotificationPublisher;
+  private final Clock clock;
 
   public UserService(
       UserRepository userRepository,
@@ -44,7 +46,8 @@ public class UserService {
       PasswordEncoder passwordEncoder,
       PasswordSetupTokenService passwordSetupTokenService,
       UserInvitationMailService userInvitationMailService,
-      LiveNotificationPublisher liveNotificationPublisher
+      LiveNotificationPublisher liveNotificationPublisher,
+      Clock clock
   ) {
     this.userRepository = userRepository;
     this.locationRepository = locationRepository;
@@ -52,6 +55,7 @@ public class UserService {
     this.passwordSetupTokenService = passwordSetupTokenService;
     this.userInvitationMailService = userInvitationMailService;
     this.liveNotificationPublisher = liveNotificationPublisher;
+    this.clock = clock;
   }
 
   @Transactional
@@ -127,7 +131,21 @@ public class UserService {
 
   @Transactional
   public void markLoginSuccess(User user) {
-    user.setLastAccessAt(Instant.now());
+    user.setLastAccessAt(clock.instant());
+    clearFailedLoginState(user);
+    userRepository.save(user);
+  }
+
+  @Transactional
+  public void clearFailedLoginState(User user) {
+    user.setFailedLoginAttempts(0);
+    user.setFirstFailedLoginAt(null);
+    user.setLockedUntil(null);
+    userRepository.save(user);
+  }
+
+  @Transactional
+  public void markLoginFailure(User user) {
     userRepository.save(user);
   }
 
