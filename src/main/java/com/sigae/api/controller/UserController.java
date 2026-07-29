@@ -80,6 +80,11 @@ public class UserController {
     return toResponse(userService.resendInvitation(userId));
   }
 
+  @PostMapping("/{userId}/password-reset")
+  public UserResponse requestPasswordReset(@PathVariable UUID userId) {
+    return toResponse(userService.requestPasswordReset(userId));
+  }
+
   @PatchMapping("/{userId}/mfa-policy")
   public UserResponse updateMfaPolicy(
       @PathVariable UUID userId,

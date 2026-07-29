@@ -37,6 +37,7 @@ public class UserService {
   private final PasswordEncoder passwordEncoder;
   private final PasswordSetupTokenService passwordSetupTokenService;
   private final UserInvitationMailService userInvitationMailService;
+  private final PasswordResetMailService passwordResetMailService;
   private final LiveNotificationPublisher liveNotificationPublisher;
   private final Clock clock;
 
@@ -46,6 +47,7 @@ public class UserService {
       PasswordEncoder passwordEncoder,
       PasswordSetupTokenService passwordSetupTokenService,
       UserInvitationMailService userInvitationMailService,
+      PasswordResetMailService passwordResetMailService,
       LiveNotificationPublisher liveNotificationPublisher,
       Clock clock
   ) {
@@ -54,6 +56,7 @@ public class UserService {
     this.passwordEncoder = passwordEncoder;
     this.passwordSetupTokenService = passwordSetupTokenService;
     this.userInvitationMailService = userInvitationMailService;
+    this.passwordResetMailService = passwordResetMailService;
     this.liveNotificationPublisher = liveNotificationPublisher;
     this.clock = clock;
   }
@@ -126,6 +129,14 @@ public class UserService {
     String rawToken = passwordSetupTokenService.issueAccountSetupToken(user);
     userInvitationMailService.sendInvitationMail(user, rawToken);
     liveNotificationPublisher.publishAdminInvalidation();
+    return user;
+  }
+
+  @Transactional
+  public User requestPasswordReset(UUID userId) {
+    User user = getById(userId);
+    String rawToken = passwordSetupTokenService.issuePasswordResetToken(user);
+    passwordResetMailService.sendPasswordResetMail(user, rawToken);
     return user;
   }
 

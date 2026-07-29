@@ -6,6 +6,7 @@ import com.sigae.api.model.entity.Location;
 import com.sigae.api.model.entity.PasswordResetRequest;
 import com.sigae.api.service.UserInvitationMailService;
 import com.sigae.api.support.IntegrationTestSupport;
+import com.sigae.api.model.entity.User;
 import com.sigae.api.model.entity.UserRole;
 import com.sigae.api.model.entity.UserStatus;
 import org.junit.jupiter.api.Test;
@@ -373,5 +374,22 @@ class UserControllerIntegrationTest extends IntegrationTestSupport {
     org.assertj.core.api.Assertions.assertThat(passwordResetRequestRepository.findAll())
         .filteredOn(request -> request.getPurpose() == PasswordResetPurpose.ACCOUNT_SETUP && request.getCancelledAt() != null)
         .hasSize(1);
+  }
+
+  @Test
+  void adminCanRequestPasswordResetForUser() throws Exception {
+    createUser("Carlos Mendoza", "admin@sigae.edu.pe", "admin123456", UserRole.ADMINISTRADOR, UserStatus.ACTIVE);
+    User targetUser = createUser("Ana Torres", "ana@sigae.edu.pe", "ana123456", UserRole.ENCARGADO, UserStatus.ACTIVE);
+    String accessToken = loginAndGetAccessToken("admin@sigae.edu.pe", "admin123456");
+
+    mockMvc.perform(post("/api/users/{userId}/password-reset", targetUser.getId())
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.email").value("ana@sigae.edu.pe"));
+
+    org.assertj.core.api.Assertions.assertThat(passwordResetRequestRepository.findAll())
+        .singleElement()
+        .satisfies(request -> org.assertj.core.api.Assertions.assertThat(request.getPurpose())
+            .isEqualTo(PasswordResetPurpose.PASSWORD_RESET));
   }
 }
