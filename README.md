@@ -14,8 +14,9 @@ Variables principales:
 - `JWT_SECRET`, `JWT_ISSUER`
 - `JWT_ACCESS_TOKEN_TTL`, `JWT_REFRESH_TOKEN_TTL`, `JWT_PASSWORD_RESET_TOKEN_TTL`
 - `CORS_ALLOWED_ORIGINS`
+- `MAIL_PROVIDER` (`smtp` o `resend`)
 - `BOOTSTRAP_ADMIN_*` solo para el perfil `dev`
-- `MAIL_*` y `APP_FRONTEND_URL` para recuperacion/invitacion por correo
+- `MAIL_*`, `RESEND_API_KEY` y `APP_FRONTEND_URL` para recuperacion/invitacion por correo
 
 Usa `.env.example` como referencia para desarrollo local. No versionar archivos `.env`.
 
@@ -48,6 +49,12 @@ Para Gmail:
 - `MAIL_SMTP_STARTTLS_ENABLE=true`
 - `MAIL_FROM` debe corresponder a la cuenta autenticada
 - `MAIL_PASSWORD` debe ser una App Password valida
+
+Para Resend:
+
+- `MAIL_PROVIDER=resend`
+- `RESEND_API_KEY` debe ser una clave valida
+- `MAIL_FROM` debe ser un remitente verificado en Resend
 
 Verificacion rapida del flujo:
 

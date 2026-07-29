@@ -6,11 +6,13 @@ spring:
     driver-class-name: org.h2.Driver
   jpa:
     hibernate:
-      ddl-auto: none
+      ddl-auto: create-drop
   flyway:
-    enabled: true
+    enabled: false
 
 app:
+  flyway:
+    enabled: false
   auth:
     recovery:
       mail-enabled: false

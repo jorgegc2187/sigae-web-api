@@ -40,6 +40,10 @@ management:
         include: health,info
 
 app:
+  mail:
+    provider: ${MAIL_PROVIDER:smtp}
+    resend:
+      api-key: ${RESEND_API_KEY:}
   security:
     jwt:
       issuer: ${JWT_ISSUER:sigae-api}

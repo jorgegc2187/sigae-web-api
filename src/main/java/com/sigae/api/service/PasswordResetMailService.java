@@ -1,13 +1,10 @@
 package com.sigae.api.service;
 
 import com.sigae.api.config.AuthRecoveryProperties;
+import com.sigae.api.exception.MailDeliveryException;
 import com.sigae.api.model.entity.User;
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -15,16 +12,16 @@ public class PasswordResetMailService {
 
   private static final String DEFAULT_VISIBLE_SYSTEM_NAME = "Sistema de Gestión de Activos";
 
-  private final JavaMailSender mailSender;
+  private final EmailDeliveryService emailDeliveryService;
   private final AuthRecoveryProperties recoveryProperties;
   private final InstitutionSettingsService institutionSettingsService;
 
   public PasswordResetMailService(
-      JavaMailSender mailSender,
+      EmailDeliveryService emailDeliveryService,
       AuthRecoveryProperties recoveryProperties,
       InstitutionSettingsService institutionSettingsService
   ) {
-    this.mailSender = mailSender;
+    this.emailDeliveryService = emailDeliveryService;
     this.recoveryProperties = recoveryProperties;
     this.institutionSettingsService = institutionSettingsService;
   }
@@ -35,17 +32,17 @@ public class PasswordResetMailService {
     }
 
     try {
-      MimeMessage message = mailSender.createMimeMessage();
-      MimeMessageHelper helper = new MimeMessageHelper(message, true, StandardCharsets.UTF_8.name());
       String resetUrl = buildResetUrl(rawToken);
       String systemName = resolveVisibleSystemName();
-      helper.setFrom(recoveryProperties.mailFrom());
-      helper.setTo(user.getEmail());
-      helper.setSubject("Restablecimiento de contraseña - " + systemName);
-      helper.setText(buildPlainText(resetUrl, systemName), buildHtml(resetUrl, systemName));
-      mailSender.send(message);
-    } catch (MessagingException | RuntimeException exception) {
-      throw new IllegalStateException("No se pudo enviar el correo de recuperación.", exception);
+      emailDeliveryService.send(new EmailMessage(
+          recoveryProperties.mailFrom(),
+          user.getEmail(),
+          "Restablecimiento de contraseña - " + systemName,
+          buildPlainText(resetUrl, systemName),
+          buildHtml(resetUrl, systemName)
+      ));
+    } catch (RuntimeException exception) {
+      throw new MailDeliveryException("No se pudo enviar el correo de recuperación.", exception);
     }
   }
 

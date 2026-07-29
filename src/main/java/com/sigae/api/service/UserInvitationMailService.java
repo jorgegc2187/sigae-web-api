@@ -3,14 +3,10 @@ package com.sigae.api.service;
 import com.sigae.api.config.AuthRecoveryProperties;
 import com.sigae.api.exception.MailDeliveryException;
 import com.sigae.api.model.entity.User;
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -19,16 +15,16 @@ public class UserInvitationMailService {
   private static final Logger LOGGER = LoggerFactory.getLogger(UserInvitationMailService.class);
   private static final String DEFAULT_VISIBLE_SYSTEM_NAME = "Sistema de Gestión de Activos";
 
-  private final JavaMailSender mailSender;
+  private final EmailDeliveryService emailDeliveryService;
   private final AuthRecoveryProperties recoveryProperties;
   private final InstitutionSettingsService institutionSettingsService;
 
   public UserInvitationMailService(
-      JavaMailSender mailSender,
+      EmailDeliveryService emailDeliveryService,
       AuthRecoveryProperties recoveryProperties,
       InstitutionSettingsService institutionSettingsService
   ) {
-    this.mailSender = mailSender;
+    this.emailDeliveryService = emailDeliveryService;
     this.recoveryProperties = recoveryProperties;
     this.institutionSettingsService = institutionSettingsService;
   }
@@ -39,26 +35,23 @@ public class UserInvitationMailService {
     }
 
     try {
-      MimeMessage message = mailSender.createMimeMessage();
-      MimeMessageHelper helper = new MimeMessageHelper(message, true, StandardCharsets.UTF_8.name());
       String resetUrl = buildResetUrl(rawToken);
       String systemName = resolveVisibleSystemName();
-      helper.setFrom(recoveryProperties.mailFrom());
-      helper.setTo(user.getEmail());
-      helper.setSubject("Bienvenido a " + systemName + " - Configura tu contraseña");
-      helper.setText(
+      emailDeliveryService.send(new EmailMessage(
+          recoveryProperties.mailFrom(),
+          user.getEmail(),
+          "Bienvenido a " + systemName + " - Configura tu contraseña",
           buildPlainText(user.getFullName(), resetUrl, systemName),
           buildHtml(user.getFullName(), resetUrl, systemName)
-      );
-      mailSender.send(message);
-    } catch (MessagingException | RuntimeException exception) {
+      ));
+    } catch (RuntimeException exception) {
       LOGGER.error(
-          "No se pudo enviar el correo de invitación a {} usando el host SMTP configurado.",
+          "No se pudo enviar el correo de invitación a {} usando el proveedor configurado.",
           user.getEmail(),
           exception
       );
       throw new MailDeliveryException(
-          "No se pudo enviar el correo de invitación. Verifique la configuración SMTP e intente nuevamente.",
+          "No se pudo enviar el correo de invitación. Verifique la configuración de correo e intente nuevamente.",
           exception
       );
     }
