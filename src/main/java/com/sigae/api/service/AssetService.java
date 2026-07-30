@@ -287,6 +287,7 @@ public class AssetService {
     String previousCode = asset.getCode();
     String previousSerialNumber = asset.getSerialNumber();
     java.time.LocalDate previousAcquisitionDate = asset.getAcquisitionDate();
+    String previousDescription = asset.getDescription();
     String previousNotes = asset.getNotes();
     AssetCondition previousCondition = asset.getCondition();
     String previousLocationName = asset.getLocation().getName();
@@ -348,6 +349,7 @@ public class AssetService {
         null,
         user
     );
+    registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Descripción del activo actualizada.", previousDescription, saved.getDescription(), null, user);
     registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Notas del activo actualizadas.", previousNotes, saved.getNotes(), null, user);
     registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Tipo de activo actualizado.", previousTypeName, saved.getAssetType().getName(), null, user);
     registerFieldTraceability(saved, TraceabilityEventType.UPDATED, "Categoria del activo actualizada.", previousCategoryName, saved.getAssetType().getCategory().getName(), null, user);
@@ -403,6 +405,7 @@ public class AssetService {
   private void applyOptionalFields(Asset asset, AssetRequest request) {
     asset.setSerialNumber(normalizeOptional(request.serialNumber()));
     asset.setAcquisitionDate(request.acquisitionDate());
+    asset.setDescription(normalizeOptional(request.description()));
     asset.setNotes(normalizeOptional(request.notes()));
   }
 
@@ -798,6 +801,7 @@ public class AssetService {
         var location = root.join("location");
         predicates.add(criteriaBuilder.or(
             criteriaBuilder.like(criteriaBuilder.lower(root.get("name")), pattern),
+            criteriaBuilder.like(criteriaBuilder.lower(root.get("description")), pattern),
             criteriaBuilder.like(criteriaBuilder.lower(root.get("code")), pattern),
             criteriaBuilder.like(criteriaBuilder.lower(root.get("serialNumber")), pattern),
             criteriaBuilder.like(criteriaBuilder.lower(location.get("name")), pattern),

@@ -63,6 +63,9 @@ public class Asset extends BaseEntity {
   private Instant decommissionedAt;
 
   @Column(columnDefinition = "text")
+  private String description;
+
+  @Column(columnDefinition = "text")
   private String notes;
 
   @OneToMany(mappedBy = "asset", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -162,6 +165,14 @@ public class Asset extends BaseEntity {
 
   public void setDecommissionedAt(Instant decommissionedAt) {
     this.decommissionedAt = decommissionedAt;
+  }
+
+  public String getDescription() {
+    return description;
+  }
+
+  public void setDescription(String description) {
+    this.description = description;
   }
 
   public String getNotes() {

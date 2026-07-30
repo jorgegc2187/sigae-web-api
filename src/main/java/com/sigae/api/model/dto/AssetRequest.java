@@ -18,6 +18,7 @@ public record AssetRequest(
     @NotNull AssetCondition condition,
     @Size(max = 100) String serialNumber,
     LocalDate acquisitionDate,
+    String description,
     String notes,
     @Valid List<AssetAttributeValueRequest> attributeValues,
     List<UUID> removedAttachmentIds

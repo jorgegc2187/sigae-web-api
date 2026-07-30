@@ -420,6 +420,7 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
                   "assetTypeId": "%s",
                   "locationId": "%s",
                   "condition": "Bueno",
+                  "description": "Laptop Lenovo S: WB09945995",
                   "notes": "Activo inicial",
                   "attributeValues": [
                     {
@@ -446,6 +447,7 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
                   "assetTypeId": "%s",
                   "locationId": "%s",
                   "condition": "Regular",
+                  "description": "Laptop Lenovo S: WB09945995, Batería S: BTY115121500048Z0R92CL3R6",
                   "notes": "Activo actualizado por mantenimiento",
                   "attributeValues": [
                     {
@@ -456,6 +458,44 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
                   "removedAttachmentIds": []
                 }
                 """.formatted(catalog.assetTypeId(), locationId, attributeDefinitionId)))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.description").value("Laptop Lenovo S: WB09945995, Batería S: BTY115121500048Z0R92CL3R6"));
+
+    mockMvc.perform(get("/api/assets")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .param("search", "batería"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.totalElements").value(1))
+        .andExpect(jsonPath("$.items[0].id").value(assetId));
+
+    String clearedDescriptionPayload = """
+        {
+          "code": "CMP-2026-080",
+          "name": "Laptop Dell Latitude",
+          "assetTypeId": "%s",
+          "locationId": "%s",
+          "condition": "Regular",
+          "description": "   ",
+          "notes": "Activo actualizado por mantenimiento",
+          "attributeValues": [
+            {
+              "attributeDefinitionId": "%s",
+              "value": "Dell"
+            }
+          ],
+          "removedAttachmentIds": []
+        }
+        """.formatted(catalog.assetTypeId(), locationId, attributeDefinitionId);
+
+    mockMvc.perform(multipart(HttpMethod.PATCH, "/api/assets/{assetId}", assetId)
+            .file(assetPayload(clearedDescriptionPayload))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.description").value(nullValue()));
+
+    mockMvc.perform(multipart(HttpMethod.PATCH, "/api/assets/{assetId}", assetId)
+            .file(assetPayload(clearedDescriptionPayload))
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isOk());
 
@@ -472,6 +512,10 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
     boolean hasNameChange = false;
     boolean hasConditionChange = false;
     boolean hasAttributeChange = false;
+    boolean hasNotesChange = false;
+    boolean hasDescriptionChange = false;
+    boolean hasDescriptionClear = false;
+    int descriptionChanges = 0;
 
     for (var node : traceability) {
       String description = node.get("description").asText();
@@ -499,12 +543,37 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
           && "Carlos Mendoza".equals(node.path("userName").asText())) {
         hasAttributeChange = true;
       }
+
+      if ("Notas del activo actualizadas.".equals(description)
+          && "Activo inicial".equals(node.path("previousValue").asText())
+          && "Activo actualizado por mantenimiento".equals(node.path("newValue").asText())
+          && "Carlos Mendoza".equals(node.path("userName").asText())) {
+        hasNotesChange = true;
+      }
+
+      if ("Descripción del activo actualizada.".equals(description)) {
+        descriptionChanges++;
+        if ("Laptop Lenovo S: WB09945995".equals(node.path("previousValue").asText())
+            && "Laptop Lenovo S: WB09945995, Batería S: BTY115121500048Z0R92CL3R6".equals(node.path("newValue").asText())
+            && "Carlos Mendoza".equals(node.path("userName").asText())) {
+          hasDescriptionChange = true;
+        }
+        if ("Laptop Lenovo S: WB09945995, Batería S: BTY115121500048Z0R92CL3R6".equals(node.path("previousValue").asText())
+            && node.path("newValue").isNull()
+            && "Carlos Mendoza".equals(node.path("userName").asText())) {
+          hasDescriptionClear = true;
+        }
+      }
     }
 
     Assertions.assertFalse(hasGenericUpdated);
     Assertions.assertTrue(hasNameChange);
     Assertions.assertTrue(hasConditionChange);
     Assertions.assertTrue(hasAttributeChange);
+    Assertions.assertTrue(hasNotesChange);
+    Assertions.assertTrue(hasDescriptionChange);
+    Assertions.assertTrue(hasDescriptionClear);
+    Assertions.assertEquals(2, descriptionChanges);
   }
 
   @Test
