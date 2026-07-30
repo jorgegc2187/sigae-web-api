@@ -30,7 +30,7 @@ class GlobalExceptionHandlerTest {
         .andExpect(status().isPayloadTooLarge())
         .andExpect(jsonPath("$.status").value(413))
         .andExpect(jsonPath("$.error").value("Payload Too Large"))
-        .andExpect(jsonPath("$.message").value("Los archivos adjuntos exceden el tamaño máximo permitido para registrar el préstamo."))
+        .andExpect(jsonPath("$.message").value("Los archivos adjuntos exceden el tamaño máximo permitido."))
         .andExpect(jsonPath("$.path").value("/test/max-upload"));
   }
 

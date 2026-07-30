@@ -22,7 +22,7 @@ class InstitutionSettingsControllerIntegrationTest extends IntegrationTestSuppor
   void brandingIsPublicAndReturnsDefaultValues() throws Exception {
     mockMvc.perform(get("/api/settings/branding"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.systemName").value("SIGAE"))
+        .andExpect(jsonPath("$.systemName").value("Sistema de Gestión de Activos"))
         .andExpect(jsonPath("$.hasLogo").value(false));
   }
 

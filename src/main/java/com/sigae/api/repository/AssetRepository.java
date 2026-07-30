@@ -42,7 +42,7 @@ public interface AssetRepository extends JpaRepository<Asset, UUID>, JpaSpecific
   java.util.List<Asset> findAll(Sort sort);
 
   @Override
-  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier", "attributeValues", "attributeValues.attributeDefinition", "attachments"})
+  @EntityGraph(attributePaths = {"assetType", "assetType.category", "location", "supplier"})
   Page<Asset> findAll(Specification<Asset> specification, Pageable pageable);
 
   @Override
