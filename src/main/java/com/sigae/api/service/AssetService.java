@@ -7,6 +7,7 @@ import com.sigae.api.model.dto.AssetAttributeValueRequest;
 import com.sigae.api.model.dto.AssetAttachmentFile;
 import com.sigae.api.model.dto.AssetInventoryGroupResponse;
 import com.sigae.api.model.dto.AssetInventoryGroupUnitResponse;
+import com.sigae.api.model.dto.PageResponse;
 import com.sigae.api.model.dto.AssetRequest;
 import com.sigae.api.model.dto.AssetStatusChangeRequest;
 import com.sigae.api.model.entity.AssetAttachment;
@@ -44,6 +45,9 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -108,6 +112,40 @@ public class AssetService {
     return assetRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt")).stream()
         .map(this::toResponse)
         .toList();
+  }
+
+  public PageResponse<com.sigae.api.model.dto.AssetResponse> findPageResponses(
+      String search,
+      UUID categoryId,
+      AssetCondition condition,
+      UUID locationId,
+      int page,
+      int size,
+      String sortDirection
+  ) {
+    if (page < 1 || size < 1 || size > 100) {
+      throw new BadRequestException("Los parámetros de paginación no son válidos.");
+    }
+
+    Sort.Direction direction = "asc".equalsIgnoreCase(sortDirection)
+        ? Sort.Direction.ASC
+        : Sort.Direction.DESC;
+    PageRequest pageable = PageRequest.of(
+        page - 1,
+        size,
+        Sort.by(direction, "createdAt").and(Sort.by(Sort.Direction.ASC, "id"))
+    );
+    Page<Asset> result = assetRepository.findAll(buildPageSpecification(search, categoryId, condition, locationId), pageable);
+
+    return new PageResponse<>(
+        result.getContent().stream().map(this::toResponse).toList(),
+        result.getNumber() + 1,
+        result.getSize(),
+        result.getTotalElements(),
+        result.getTotalPages(),
+        result.hasNext(),
+        result.hasPrevious()
+    );
   }
 
   public com.sigae.api.model.dto.AssetResponse getResponseById(UUID id) {
@@ -742,6 +780,42 @@ public class AssetService {
 
   private String normalizeSearch(String value) {
     return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private Specification<Asset> buildPageSpecification(
+      String search,
+      UUID categoryId,
+      AssetCondition condition,
+      UUID locationId
+  ) {
+    String normalizedSearch = normalizeSearch(search);
+    return (root, query, criteriaBuilder) -> {
+      var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+      if (!normalizedSearch.isBlank()) {
+        String pattern = "%" + normalizedSearch + "%";
+        var assetType = root.join("assetType");
+        var category = assetType.join("category");
+        var location = root.join("location");
+        predicates.add(criteriaBuilder.or(
+            criteriaBuilder.like(criteriaBuilder.lower(root.get("name")), pattern),
+            criteriaBuilder.like(criteriaBuilder.lower(root.get("code")), pattern),
+            criteriaBuilder.like(criteriaBuilder.lower(root.get("serialNumber")), pattern),
+            criteriaBuilder.like(criteriaBuilder.lower(location.get("name")), pattern),
+            criteriaBuilder.like(criteriaBuilder.lower(assetType.get("name")), pattern),
+            criteriaBuilder.like(criteriaBuilder.lower(category.get("name")), pattern)
+        ));
+      }
+      if (categoryId != null) {
+        predicates.add(criteriaBuilder.equal(root.get("assetType").get("category").get("id"), categoryId));
+      }
+      if (condition != null) {
+        predicates.add(criteriaBuilder.equal(root.get("condition"), condition));
+      }
+      if (locationId != null) {
+        predicates.add(criteriaBuilder.equal(root.get("location").get("id"), locationId));
+      }
+      return criteriaBuilder.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+    };
   }
 
   private List<AssetInventoryGroupResponse> buildGroupedResponses(String search, UUID categoryId) {

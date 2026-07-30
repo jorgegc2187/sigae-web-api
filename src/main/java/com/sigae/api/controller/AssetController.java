@@ -6,6 +6,7 @@ import com.sigae.api.model.dto.AssetResponse;
 import com.sigae.api.model.dto.AssetAttachmentFile;
 import com.sigae.api.model.dto.AssetTraceabilityResponse;
 import com.sigae.api.model.dto.AssetStatusChangeRequest;
+import com.sigae.api.model.dto.PageResponse;
 import com.sigae.api.model.dto.AssetTraceabilityAttachmentFile;
 import com.sigae.api.service.AssetService;
 import jakarta.validation.Valid;
@@ -40,7 +41,20 @@ public class AssetController {
   }
 
   @GetMapping
-  public List<AssetResponse> list() {
+  public PageResponse<AssetResponse> list(
+      @RequestParam(required = false) String search,
+      @RequestParam(required = false) UUID categoryId,
+      @RequestParam(required = false) com.sigae.api.model.entity.AssetCondition condition,
+      @RequestParam(required = false) UUID locationId,
+      @RequestParam(defaultValue = "1") int page,
+      @RequestParam(defaultValue = "10") int size,
+      @RequestParam(defaultValue = "desc") String sortDirection
+  ) {
+    return assetService.findPageResponses(search, categoryId, condition, locationId, page, size, sortDirection);
+  }
+
+  @GetMapping("/all")
+  public List<AssetResponse> listAll() {
     return assetService.findAllResponses();
   }
 

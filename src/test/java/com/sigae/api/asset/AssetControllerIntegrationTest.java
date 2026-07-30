@@ -27,6 +27,31 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AssetControllerIntegrationTest extends IntegrationTestSupport {
 
   @Test
+  void listInventoryReturnsRequestedPageAndMetadata() throws Exception {
+    String accessToken = createAdminAndLogin();
+    AssetCatalog catalog = createAssetCatalog(accessToken);
+    UUID locationId = createLocation(accessToken, "Laboratorio de Cómputo");
+
+    createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-001", "Laptop Lenovo ThinkPad");
+    createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-002", "Laptop Lenovo ThinkPad");
+
+    mockMvc.perform(get("/api/assets")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .param("page", "2")
+            .param("size", "1")
+            .param("search", "lenovo"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.items", hasSize(1)))
+        .andExpect(jsonPath("$.items[0].code").value("CMP-2026-001"))
+        .andExpect(jsonPath("$.page").value(2))
+        .andExpect(jsonPath("$.size").value(1))
+        .andExpect(jsonPath("$.totalElements").value(2))
+        .andExpect(jsonPath("$.totalPages").value(2))
+        .andExpect(jsonPath("$.hasNext").value(false))
+        .andExpect(jsonPath("$.hasPrevious").value(true));
+  }
+
+  @Test
   void groupedInventoryReturnsAssetFamiliesWithUnits() throws Exception {
     String accessToken = createAdminAndLogin();
     AssetCatalog catalog = createAssetCatalog(accessToken);
@@ -192,7 +217,11 @@ class AssetControllerIntegrationTest extends IntegrationTestSupport {
     mockMvc.perform(get("/api/assets")
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$[0].createdByName").value("Carlos Mendoza"));
+        .andExpect(jsonPath("$.items[0].createdByName").value("Carlos Mendoza"))
+        .andExpect(jsonPath("$.page").value(1))
+        .andExpect(jsonPath("$.size").value(10))
+        .andExpect(jsonPath("$.totalElements").value(1))
+        .andExpect(jsonPath("$.totalPages").value(1));
   }
 
   @Test
