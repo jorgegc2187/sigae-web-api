@@ -3,11 +3,17 @@ package com.sigae.api.reports;
 import com.sigae.api.model.entity.UserRole;
 import com.sigae.api.model.entity.UserStatus;
 import com.sigae.api.support.IntegrationTestSupport;
+import java.awt.Color;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.Test;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -18,6 +24,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MvcResult;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -26,6 +33,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class ReportControllerIntegrationTest extends IntegrationTestSupport {
+
+  private static final byte[] PNG_IMAGE = Base64.getDecoder().decode(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLwJAAAAABJRU5ErkJggg=="
+  );
+  private static final byte[] SIGNATURE_PNG_IMAGE = createPng(Color.BLUE);
 
   @Test
   void adminCanListAssetReportWithFilters() throws Exception {
@@ -152,6 +164,34 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(status().isUnauthorized());
   }
 
+  @Test
+  void physicalInventoryExportCanIncludeTemporarySignatureAndInstitutionLogo() throws Exception {
+    String accessToken = createAdminAndLogin();
+    updateInstitutionSettingsWithLogo(accessToken);
+
+    byte[] wordContent = exportReportWithSignature(accessToken, "word", signaturePngFile());
+    try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(wordContent))) {
+      org.junit.jupiter.api.Assertions.assertEquals(2, document.getAllPictures().size());
+      org.junit.jupiter.api.Assertions.assertTrue(extractWordText(document).contains("Carlos Mendoza"));
+    }
+
+    byte[] excelContent = exportReportWithSignature(accessToken, "excel", signaturePngFile());
+    try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(excelContent))) {
+      org.junit.jupiter.api.Assertions.assertEquals(2, workbook.getAllPictures().size());
+      org.junit.jupiter.api.Assertions.assertTrue(extractSheetValues(workbook.getSheetAt(0)).contains("Carlos Mendoza"));
+    }
+
+    byte[] pdfContent = exportReportWithSignature(accessToken, "pdf", signaturePngFile());
+    org.junit.jupiter.api.Assertions.assertTrue(new String(pdfContent, StandardCharsets.ISO_8859_1).startsWith("%PDF"));
+
+    mockMvc.perform(multipart("/api/reports/assets/export")
+            .file(new MockMultipartFile("signature", "firma.jpg", MediaType.IMAGE_JPEG_VALUE, new byte[] {1, 2, 3}))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .param("format", "pdf"))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.message").value("La firma debe enviarse en formato PNG."));
+  }
+
   private void assertExport(
       String accessToken,
       String format,
@@ -174,6 +214,67 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
         .andExpect(status().isOk())
         .andReturn();
     return result.getResponse().getContentAsByteArray();
+  }
+
+  private byte[] exportReportWithSignature(
+      String accessToken,
+      String format,
+      MockMultipartFile signature
+  ) throws Exception {
+    MvcResult result = mockMvc.perform(multipart("/api/reports/assets/export")
+            .file(signature)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+            .param("format", format))
+        .andExpect(status().isOk())
+        .andReturn();
+    return result.getResponse().getContentAsByteArray();
+  }
+
+  private void updateInstitutionSettingsWithLogo(String accessToken) throws Exception {
+    MockMultipartFile payload = new MockMultipartFile(
+        "payload",
+        "",
+        MediaType.APPLICATION_JSON_VALUE,
+        """
+            {
+              "systemName": "I.E. Simón Rodríguez - Nasca",
+              "address": "Av. Principal 123",
+              "city": "Nasca",
+              "supportPhone": "",
+              "supportEmail": "contacto@sigae.edu.pe"
+            }
+            """.getBytes(StandardCharsets.UTF_8)
+    );
+
+    mockMvc.perform(multipart("/api/settings")
+            .file(payload)
+            .file(pngFile("logo", "logo.png"))
+            .with(request -> {
+              request.setMethod("PUT");
+              return request;
+            })
+            .with(csrf())
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+        .andExpect(status().isOk());
+  }
+
+  private MockMultipartFile pngFile(String fieldName, String fileName) {
+    return new MockMultipartFile(fieldName, fileName, MediaType.IMAGE_PNG_VALUE, PNG_IMAGE);
+  }
+
+  private MockMultipartFile signaturePngFile() {
+    return new MockMultipartFile("signature", "firma.png", MediaType.IMAGE_PNG_VALUE, SIGNATURE_PNG_IMAGE);
+  }
+
+  private static byte[] createPng(Color color) {
+    BufferedImage image = new BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB);
+    image.setRGB(0, 0, color.getRGB());
+    try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      ImageIO.write(image, "png", output);
+      return output.toByteArray();
+    } catch (IOException exception) {
+      throw new IllegalStateException("No se pudo crear la imagen de prueba.", exception);
+    }
   }
 
   private String createAdminAndLogin() throws Exception {

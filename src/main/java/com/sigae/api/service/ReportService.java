@@ -46,6 +46,9 @@ import java.util.stream.Stream;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.BorderStyle;
+import org.apache.poi.ss.usermodel.ClientAnchor;
+import org.apache.poi.ss.usermodel.CreationHelper;
+import org.apache.poi.ss.usermodel.Drawing;
 import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.HorizontalAlignment;
 import org.apache.poi.ss.usermodel.IndexedColors;
@@ -67,6 +70,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @Transactional(readOnly = true)
@@ -149,6 +153,18 @@ public class ReportService {
       ReportExportFormat format,
       AuthenticatedUser authenticatedUser
   ) {
+    return exportAssetRows(categoryId, locationId, startDate, endDate, format, null, authenticatedUser);
+  }
+
+  public ReportExportFile exportAssetRows(
+      UUID categoryId,
+      UUID locationId,
+      LocalDate startDate,
+      LocalDate endDate,
+      ReportExportFormat format,
+      MultipartFile signature,
+      AuthenticatedUser authenticatedUser
+  ) {
     PhysicalInventoryReportResponse report = physicalInventory(
         categoryId,
         locationId,
@@ -156,10 +172,15 @@ public class ReportService {
         endDate,
         authenticatedUser
     );
+    PhysicalInventoryExportContext context = new PhysicalInventoryExportContext(
+        report,
+        institutionSettingsService.getCurrentSettings(),
+        readReportSignature(signature)
+    );
     byte[] content = switch (format) {
-      case PDF -> buildPhysicalInventoryPdf(report);
-      case EXCEL -> buildPhysicalInventoryExcel(report);
-      case WORD -> buildPhysicalInventoryWord(report);
+      case PDF -> buildPhysicalInventoryPdf(context);
+      case EXCEL -> buildPhysicalInventoryExcel(context);
+      case WORD -> buildPhysicalInventoryWord(context);
     };
 
     return new ReportExportFile(
@@ -167,6 +188,21 @@ public class ReportService {
         format.contentType(),
         content
     );
+  }
+
+  private ReportSignature readReportSignature(MultipartFile signature) {
+    if (signature == null || signature.isEmpty()) {
+      return null;
+    }
+    String contentType = signature.getContentType() == null ? "image/png" : signature.getContentType();
+    if (!"image/png".equalsIgnoreCase(contentType)) {
+      throw new BadRequestException("La firma debe enviarse en formato PNG.");
+    }
+    try {
+      return new ReportSignature(signature.getBytes(), normalizeText(signature.getOriginalFilename(), "firma-reporte.png"));
+    } catch (IOException exception) {
+      throw new BadRequestException("No se pudo procesar la firma digital del reporte.");
+    }
   }
 
   public PhysicalInventoryReportResponse physicalInventory(
@@ -434,20 +470,21 @@ public class ReportService {
     }
   }
 
-  private byte[] buildPhysicalInventoryPdf(PhysicalInventoryReportResponse report) {
+  private byte[] buildPhysicalInventoryPdf(PhysicalInventoryExportContext context) {
     try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       Document document = new Document(PageSize.A4.rotate(), 22, 22, 24, 24);
       PdfWriter.getInstance(document, output);
       document.open();
-      addPhysicalPdfHeading(document, report);
+      addPhysicalPdfHeading(document, context.report(), context.settings());
       PdfPTable table = new PdfPTable(new float[] {0.45f, 3.3f, 1.0f, 0.35f, 0.35f, 0.35f, 0.85f, 1.45f, 0.5f});
       table.setWidthPercentage(100);
       addPhysicalPdfHeader(table);
-      for (int index = 0; index < report.rows().size(); index++) {
-        addPhysicalPdfRow(table, index + 1, report.rows().get(index));
+      for (int index = 0; index < context.report().rows().size(); index++) {
+        addPhysicalPdfRow(table, index + 1, context.report().rows().get(index));
       }
-      addEmptyPdfRowIfNeeded(table, 9, report.rows().isEmpty());
+      addEmptyPdfRowIfNeeded(table, 9, context.report().rows().isEmpty());
       document.add(table);
+      addPhysicalPdfSignature(document, context.report().generatedBy(), context.signature());
       document.close();
       return output.toByteArray();
     } catch (Exception exception) {
@@ -455,15 +492,55 @@ public class ReportService {
     }
   }
 
-  private void addPhysicalPdfHeading(Document document, PhysicalInventoryReportResponse report) throws DocumentException {
+  private void addPhysicalPdfHeading(
+      Document document,
+      PhysicalInventoryReportResponse report,
+      InstitutionSettings settings
+  ) throws DocumentException, IOException {
     Font institutionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10);
     Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12);
     Font metadataFont = FontFactory.getFont(FontFactory.HELVETICA, 8);
+    Image logo = buildPdfLogo(settings);
+    if (logo != null) {
+      logo.scaleToFit(48, 48);
+      logo.setAlignment(Image.ALIGN_CENTER);
+      document.add(logo);
+    }
     addCenteredPdfLine(document, report.ugelName(), institutionFont);
     addCenteredPdfLine(document, report.institutionName().toUpperCase(Locale.ROOT), institutionFont);
     addCenteredPdfLine(document, report.title(), titleFont);
     addCenteredPdfLine(document, report.locationSubtitle(), institutionFont);
     addCenteredPdfLine(document, "Generado por: " + report.generatedBy() + "  |  Fecha: " + formatDate(report.generatedAt()), metadataFont);
+  }
+
+  private void addPhysicalPdfSignature(Document document, String generatedBy, ReportSignature signature) throws DocumentException {
+    PdfPTable signatureTable = new PdfPTable(1);
+    signatureTable.setWidthPercentage(38);
+    signatureTable.setHorizontalAlignment(Element.ALIGN_CENTER);
+    signatureTable.setSpacingBefore(28);
+    PdfPCell signatureArea = new PdfPCell();
+    signatureArea.setBorder(PdfPCell.NO_BORDER);
+    signatureArea.setFixedHeight(54);
+    signatureArea.setHorizontalAlignment(Element.ALIGN_CENTER);
+    signatureArea.setVerticalAlignment(Element.ALIGN_BOTTOM);
+    if (signature != null) {
+      try {
+        Image signatureImage = Image.getInstance(signature.content());
+        signatureImage.scaleToFit(150, 48);
+        signatureArea.addElement(signatureImage);
+      } catch (Exception exception) {
+        throw new IllegalStateException("No se pudo insertar la firma digital en el PDF.", exception);
+      }
+    }
+    signatureTable.addCell(signatureArea);
+    PdfPCell line = new PdfPCell(new Phrase(" "));
+    line.setBorder(PdfPCell.TOP);
+    line.setFixedHeight(8);
+    signatureTable.addCell(line);
+    PdfPCell name = pdfCell(generatedBy, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9), Element.ALIGN_CENTER);
+    name.setBorder(PdfPCell.NO_BORDER);
+    signatureTable.addCell(name);
+    document.add(signatureTable);
   }
 
   private void addCenteredPdfLine(Document document, String value, Font font) throws DocumentException {
@@ -741,19 +818,19 @@ public class ReportService {
     }
   }
 
-  private byte[] buildPhysicalInventoryExcel(PhysicalInventoryReportResponse report) {
+  private byte[] buildPhysicalInventoryExcel(PhysicalInventoryExportContext context) {
     try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       var sheet = workbook.createSheet("Inventario físico");
       CellStyle centered = physicalExcelStyle(workbook, true, true);
       CellStyle left = physicalExcelStyle(workbook, false, true);
       int rowIndex = 0;
-      rowIndex = writePhysicalExcelTitle(sheet, rowIndex, report, workbook);
+      rowIndex = writePhysicalExcelTitle(sheet, rowIndex, context.report(), context.settings(), workbook);
       Row header = sheet.createRow(rowIndex);
       Row subheader = sheet.createRow(rowIndex + 1);
       writePhysicalExcelHeader(sheet, header, subheader, centered);
       rowIndex += 2;
-      for (int index = 0; index < report.rows().size(); index++) {
-        PhysicalInventoryReportRowResponse reportRow = report.rows().get(index);
+      for (int index = 0; index < context.report().rows().size(); index++) {
+        PhysicalInventoryReportRowResponse reportRow = context.report().rows().get(index);
         Row row = sheet.createRow(rowIndex++);
         row.createCell(0).setCellValue(index + 1);
         row.createCell(1).setCellValue(reportRow.assetDescription());
@@ -777,6 +854,7 @@ public class ReportService {
       sheet.setColumnWidth(6, 4600);
       sheet.setColumnWidth(7, 9000);
       sheet.setColumnWidth(8, 1700);
+      addPhysicalExcelSignature(sheet, rowIndex, context.report().generatedBy(), context.signature(), workbook);
       workbook.write(output);
       return output.toByteArray();
     } catch (IOException exception) {
@@ -788,6 +866,7 @@ public class ReportService {
       org.apache.poi.ss.usermodel.Sheet sheet,
       int rowIndex,
       PhysicalInventoryReportResponse report,
+      InstitutionSettings settings,
       XSSFWorkbook workbook
   ) {
     CellStyle titleStyle = workbook.createCellStyle();
@@ -796,21 +875,89 @@ public class ReportService {
     titleFont.setFontHeightInPoints((short) 11);
     titleStyle.setFont(titleFont);
     titleStyle.setAlignment(HorizontalAlignment.CENTER);
+    boolean hasLogo = settings.hasLogo();
+    if (hasLogo) {
+      addPhysicalExcelLogo(sheet, rowIndex, settings, workbook);
+    }
     String[] lines = {report.ugelName(), report.institutionName(), report.title(), report.locationSubtitle()};
     for (String line : lines) {
       if (line == null || line.isBlank()) {
         continue;
       }
+      int titleColumn = hasLogo ? 1 : 0;
       Row row = sheet.createRow(rowIndex);
-      row.createCell(0).setCellValue(line);
-      row.getCell(0).setCellStyle(titleStyle);
-      sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, 0, 8));
+      row.createCell(titleColumn).setCellValue(line);
+      row.getCell(titleColumn).setCellStyle(titleStyle);
+      sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, hasLogo ? 1 : 0, 8));
       rowIndex++;
     }
     Row metadata = sheet.createRow(rowIndex++);
     metadata.createCell(0).setCellValue("Generado por: " + report.generatedBy());
     metadata.createCell(5).setCellValue("Fecha: " + formatDate(report.generatedAt()));
     return rowIndex + 1;
+  }
+
+  private void addPhysicalExcelLogo(
+      org.apache.poi.ss.usermodel.Sheet sheet,
+      int rowIndex,
+      InstitutionSettings settings,
+      XSSFWorkbook workbook
+  ) {
+    CreationHelper helper = workbook.getCreationHelper();
+    Drawing<?> drawing = sheet.createDrawingPatriarch();
+    ClientAnchor anchor = helper.createClientAnchor();
+    anchor.setCol1(0);
+    anchor.setCol2(1);
+    anchor.setRow1(rowIndex);
+    anchor.setRow2(rowIndex + 4);
+    int pictureIndex = workbook.addPicture(settings.getLogoContent(), excelPictureType(settings.getLogoMimeType()));
+    drawing.createPicture(anchor, pictureIndex);
+  }
+
+  private void addPhysicalExcelSignature(
+      org.apache.poi.ss.usermodel.Sheet sheet,
+      int rowIndex,
+      String generatedBy,
+      ReportSignature signature,
+      XSSFWorkbook workbook
+  ) {
+    int signatureRow = rowIndex + 2;
+    if (signature != null) {
+      CreationHelper helper = workbook.getCreationHelper();
+      Drawing<?> drawing = sheet.createDrawingPatriarch();
+      ClientAnchor anchor = helper.createClientAnchor();
+      anchor.setCol1(3);
+      anchor.setCol2(6);
+      anchor.setRow1(signatureRow);
+      anchor.setRow2(signatureRow + 3);
+      int pictureIndex = workbook.addPicture(signature.content(), XSSFWorkbook.PICTURE_TYPE_PNG);
+      drawing.createPicture(anchor, pictureIndex);
+    }
+
+    Row lineRow = sheet.createRow(signatureRow + 3);
+    CellStyle lineStyle = workbook.createCellStyle();
+    lineStyle.setBorderTop(BorderStyle.THIN);
+    lineStyle.setAlignment(HorizontalAlignment.CENTER);
+    for (int column = 3; column <= 5; column++) {
+      lineRow.createCell(column).setCellStyle(lineStyle);
+    }
+    sheet.addMergedRegion(new CellRangeAddress(signatureRow + 3, signatureRow + 3, 3, 5));
+
+    Row nameRow = sheet.createRow(signatureRow + 4);
+    CellStyle nameStyle = workbook.createCellStyle();
+    org.apache.poi.ss.usermodel.Font nameFont = workbook.createFont();
+    nameFont.setBold(true);
+    nameStyle.setFont(nameFont);
+    nameStyle.setAlignment(HorizontalAlignment.CENTER);
+    nameRow.createCell(3).setCellValue(generatedBy);
+    nameRow.getCell(3).setCellStyle(nameStyle);
+    sheet.addMergedRegion(new CellRangeAddress(signatureRow + 4, signatureRow + 4, 3, 5));
+  }
+
+  private int excelPictureType(String mimeType) {
+    return "image/png".equalsIgnoreCase(mimeType)
+        ? XSSFWorkbook.PICTURE_TYPE_PNG
+        : XSSFWorkbook.PICTURE_TYPE_JPEG;
   }
 
   private CellStyle physicalExcelStyle(XSSFWorkbook workbook, boolean centered, boolean bordered) {
@@ -975,9 +1122,11 @@ public class ReportService {
     }
   }
 
-  private byte[] buildPhysicalInventoryWord(PhysicalInventoryReportResponse report) {
+  private byte[] buildPhysicalInventoryWord(PhysicalInventoryExportContext context) {
     try (XWPFDocument document = new XWPFDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       setWordLandscape(document);
+      addPhysicalWordLogo(document, context.settings());
+      PhysicalInventoryReportResponse report = context.report();
       addWordCenteredLine(document, report.ugelName(), true);
       addWordCenteredLine(document, report.institutionName(), true);
       addWordCenteredLine(document, report.title(), true);
@@ -1001,11 +1150,52 @@ public class ReportService {
         wordRow.getCell(7).setText(row.observations());
         wordRow.getCell(8).setText(String.valueOf(row.quantity()));
       }
+      addPhysicalWordSignature(document, report.generatedBy(), context.signature());
       document.write(output);
       return output.toByteArray();
-    } catch (IOException exception) {
+    } catch (IOException | InvalidFormatException exception) {
       throw new IllegalStateException("No se pudo generar el inventario físico en Word.", exception);
     }
+  }
+
+  private void addPhysicalWordLogo(XWPFDocument document, InstitutionSettings settings) throws IOException, InvalidFormatException {
+    if (!settings.hasLogo()) {
+      return;
+    }
+    XWPFParagraph logoParagraph = document.createParagraph();
+    logoParagraph.setAlignment(ParagraphAlignment.CENTER);
+    XWPFRun logoRun = logoParagraph.createRun();
+    logoRun.addPicture(
+        new ByteArrayInputStream(settings.getLogoContent()),
+        wordPictureType(settings.getLogoMimeType()),
+        normalizeText(settings.getLogoFileName(), "institution-logo"),
+        Units.toEMU(48),
+        Units.toEMU(48)
+    );
+  }
+
+  private void addPhysicalWordSignature(XWPFDocument document, String generatedBy, ReportSignature signature)
+      throws IOException, InvalidFormatException {
+    XWPFParagraph signatureParagraph = document.createParagraph();
+    signatureParagraph.setAlignment(ParagraphAlignment.CENTER);
+    XWPFRun run = signatureParagraph.createRun();
+    for (int index = 0; index < 3; index++) {
+      run.addBreak();
+    }
+    if (signature != null) {
+      run.addPicture(
+          new ByteArrayInputStream(signature.content()),
+          XWPFDocument.PICTURE_TYPE_PNG,
+          signature.fileName(),
+          Units.toEMU(150),
+          Units.toEMU(48)
+      );
+      run.addBreak();
+    }
+    run.setText("____________________________________________");
+    run.addBreak();
+    run.setBold(true);
+    run.setText(generatedBy);
   }
 
   private void setWordLandscape(XWPFDocument document) {
@@ -1288,6 +1478,14 @@ public class ReportService {
   ) {}
 
   private record ReportGeneratedBy(String name, String email, String role) {}
+
+  private record PhysicalInventoryExportContext(
+      PhysicalInventoryReportResponse report,
+      InstitutionSettings settings,
+      ReportSignature signature
+  ) {}
+
+  private record ReportSignature(byte[] content, String fileName) {}
 
   private record AssetReportSections(
       List<AssetReportRowResponse> activeRows,

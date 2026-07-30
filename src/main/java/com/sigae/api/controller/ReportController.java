@@ -16,9 +16,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/reports")
@@ -67,6 +70,32 @@ public class ReportController {
         startDate,
         endDate,
         ReportExportFormat.from(format),
+        authenticatedUser
+    );
+
+    return ResponseEntity.ok()
+        .contentType(file.contentType())
+        .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment().filename(file.filename()).build().toString())
+        .body(file.content());
+  }
+
+  @PostMapping(path = "/assets/export", consumes = "multipart/form-data")
+  public ResponseEntity<byte[]> exportAssetsWithSignature(
+      @RequestParam(required = false) UUID categoryId,
+      @RequestParam(required = false) UUID locationId,
+      @RequestParam(required = false) LocalDate startDate,
+      @RequestParam(required = false) LocalDate endDate,
+      @RequestParam(defaultValue = "pdf") String format,
+      @RequestPart(value = "signature", required = false) MultipartFile signature,
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser
+  ) {
+    ReportExportFile file = reportService.exportAssetRows(
+        categoryId,
+        locationId,
+        startDate,
+        endDate,
+        ReportExportFormat.from(format),
+        signature,
         authenticatedUser
     );
 
