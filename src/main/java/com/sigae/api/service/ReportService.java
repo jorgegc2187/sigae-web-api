@@ -31,6 +31,7 @@ import com.sigae.api.repository.UserRepository;
 import com.sigae.api.security.AuthenticatedUser;
 import jakarta.persistence.criteria.Predicate;
 import java.awt.Color;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -43,6 +44,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Stream;
+import javax.imageio.ImageIO;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.BorderStyle;
@@ -199,10 +201,49 @@ public class ReportService {
       throw new BadRequestException("La firma debe enviarse en formato PNG.");
     }
     try {
-      return new ReportSignature(signature.getBytes(), normalizeText(signature.getOriginalFilename(), "firma-reporte.png"));
+      return new ReportSignature(
+          trimTransparentSignaturePadding(signature.getBytes()),
+          normalizeText(signature.getOriginalFilename(), "firma-reporte.png")
+      );
     } catch (IOException exception) {
       throw new BadRequestException("No se pudo procesar la firma digital del reporte.");
     }
+  }
+
+  private byte[] trimTransparentSignaturePadding(byte[] signatureContent) throws IOException {
+    BufferedImage source = ImageIO.read(new ByteArrayInputStream(signatureContent));
+    if (source == null) {
+      throw new IOException("El contenido de la firma no es una imagen PNG válida.");
+    }
+
+    int minX = source.getWidth();
+    int minY = source.getHeight();
+    int maxX = -1;
+    int maxY = -1;
+    for (int y = 0; y < source.getHeight(); y++) {
+      for (int x = 0; x < source.getWidth(); x++) {
+        if (((source.getRGB(x, y) >>> 24) & 0xFF) == 0) {
+          continue;
+        }
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+    if (maxX < 0) {
+      return signatureContent;
+    }
+
+    int padding = 12;
+    minX = Math.max(0, minX - padding);
+    minY = Math.max(0, minY - padding);
+    maxX = Math.min(source.getWidth() - 1, maxX + padding);
+    maxY = Math.min(source.getHeight() - 1, maxY + padding);
+    BufferedImage cropped = source.getSubimage(minX, minY, maxX - minX + 1, maxY - minY + 1);
+    ByteArrayOutputStream output = new ByteArrayOutputStream();
+    ImageIO.write(cropped, "png", output);
+    return output.toByteArray();
   }
 
   public PhysicalInventoryReportResponse physicalInventory(
@@ -526,7 +567,8 @@ public class ReportService {
     if (signature != null) {
       try {
         Image signatureImage = Image.getInstance(signature.content());
-        signatureImage.scaleToFit(150, 48);
+        signatureImage.scaleToFit(160, 44);
+        signatureImage.setAlignment(Image.ALIGN_CENTER);
         signatureArea.addElement(signatureImage);
       } catch (Exception exception) {
         throw new IllegalStateException("No se pudo insertar la firma digital en el PDF.", exception);
@@ -537,7 +579,7 @@ public class ReportService {
     line.setBorder(PdfPCell.TOP);
     line.setFixedHeight(8);
     signatureTable.addCell(line);
-    PdfPCell name = pdfCell(generatedBy, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9), Element.ALIGN_CENTER);
+    PdfPCell name = pdfCell(signatureLabel(generatedBy), FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9), Element.ALIGN_CENTER);
     name.setBorder(PdfPCell.NO_BORDER);
     signatureTable.addCell(name);
     document.add(signatureTable);
@@ -949,7 +991,7 @@ public class ReportService {
     nameFont.setBold(true);
     nameStyle.setFont(nameFont);
     nameStyle.setAlignment(HorizontalAlignment.CENTER);
-    nameRow.createCell(3).setCellValue(generatedBy);
+    nameRow.createCell(3).setCellValue(signatureLabel(generatedBy));
     nameRow.getCell(3).setCellStyle(nameStyle);
     sheet.addMergedRegion(new CellRangeAddress(signatureRow + 4, signatureRow + 4, 3, 5));
   }
@@ -1183,19 +1225,39 @@ public class ReportService {
       run.addBreak();
     }
     if (signature != null) {
+      int[] dimensions = signatureDimensions(signature.content(), 160, 48);
       run.addPicture(
           new ByteArrayInputStream(signature.content()),
           XWPFDocument.PICTURE_TYPE_PNG,
           signature.fileName(),
-          Units.toEMU(150),
-          Units.toEMU(48)
+          Units.toEMU(dimensions[0]),
+          Units.toEMU(dimensions[1])
       );
       run.addBreak();
     }
     run.setText("____________________________________________");
     run.addBreak();
     run.setBold(true);
-    run.setText(generatedBy);
+    run.setText(signatureLabel(generatedBy));
+  }
+
+  private String signatureLabel(String generatedBy) {
+    String normalizedName = normalizeText(generatedBy, "");
+    return normalizedName.regionMatches(true, 0, "Prof.", 0, 5)
+        ? normalizedName
+        : "Prof. " + normalizedName;
+  }
+
+  private int[] signatureDimensions(byte[] signatureContent, int maxWidth, int maxHeight) throws IOException {
+    BufferedImage image = ImageIO.read(new ByteArrayInputStream(signatureContent));
+    if (image == null || image.getWidth() <= 0 || image.getHeight() <= 0) {
+      return new int[] { maxWidth, maxHeight };
+    }
+    double scale = Math.min((double) maxWidth / image.getWidth(), (double) maxHeight / image.getHeight());
+    return new int[] {
+        Math.max(1, (int) Math.round(image.getWidth() * scale)),
+        Math.max(1, (int) Math.round(image.getHeight() * scale))
+    };
   }
 
   private void setWordLandscape(XWPFDocument document) {

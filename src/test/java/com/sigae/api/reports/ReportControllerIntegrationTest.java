@@ -172,13 +172,13 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
     byte[] wordContent = exportReportWithSignature(accessToken, "word", signaturePngFile());
     try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(wordContent))) {
       org.junit.jupiter.api.Assertions.assertEquals(2, document.getAllPictures().size());
-      org.junit.jupiter.api.Assertions.assertTrue(extractWordText(document).contains("Carlos Mendoza"));
+      org.junit.jupiter.api.Assertions.assertTrue(extractWordText(document).contains("Prof. Carlos Mendoza"));
     }
 
     byte[] excelContent = exportReportWithSignature(accessToken, "excel", signaturePngFile());
     try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(excelContent))) {
       org.junit.jupiter.api.Assertions.assertEquals(2, workbook.getAllPictures().size());
-      org.junit.jupiter.api.Assertions.assertTrue(extractSheetValues(workbook.getSheetAt(0)).contains("Carlos Mendoza"));
+      org.junit.jupiter.api.Assertions.assertTrue(extractSheetValues(workbook.getSheetAt(0)).contains("Prof. Carlos Mendoza"));
     }
 
     byte[] pdfContent = exportReportWithSignature(accessToken, "pdf", signaturePngFile());
