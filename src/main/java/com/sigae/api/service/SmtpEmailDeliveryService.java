@@ -3,6 +3,7 @@ package com.sigae.api.service;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import java.nio.charset.StandardCharsets;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -27,6 +28,13 @@ public class SmtpEmailDeliveryService implements EmailDeliveryService {
       helper.setTo(message.to());
       helper.setSubject(message.subject());
       helper.setText(message.text(), message.html());
+      for (InlineEmailImage image : message.inlineImages()) {
+        helper.addInline(
+            image.contentId(),
+            new ByteArrayResource(image.content()),
+            image.contentType()
+        );
+      }
       mailSender.send(mimeMessage);
     } catch (MessagingException | RuntimeException exception) {
       throw new IllegalStateException("No se pudo enviar el correo mediante SMTP.", exception);

@@ -3,6 +3,9 @@ package com.sigae.api.service;
 import com.sigae.api.config.MailDeliveryProperties;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
@@ -33,16 +36,26 @@ public class ResendEmailDeliveryService implements EmailDeliveryService {
   @Override
   public void send(EmailMessage message) {
     try {
+      Map<String, Object> payload = new LinkedHashMap<>();
+      payload.put("from", message.from());
+      payload.put("to", new String[] {message.to()});
+      payload.put("subject", message.subject());
+      payload.put("text", message.text());
+      payload.put("html", message.html());
+      if (!message.inlineImages().isEmpty()) {
+        payload.put("attachments", message.inlineImages().stream()
+            .map(image -> Map.of(
+                "content", Base64.getEncoder().encodeToString(image.content()),
+                "filename", image.fileName(),
+                "content_id", image.contentId(),
+                "content_type", image.contentType()
+            ))
+            .toList());
+      }
       restClient.post()
           .uri("/emails")
           .contentType(MediaType.APPLICATION_JSON)
-          .body(Map.of(
-              "from", message.from(),
-              "to", new String[] {message.to()},
-              "subject", message.subject(),
-              "text", message.text(),
-              "html", message.html()
-          ))
+          .body(payload)
           .retrieve()
           .toBodilessEntity();
     } catch (RuntimeException exception) {

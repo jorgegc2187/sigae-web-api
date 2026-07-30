@@ -13,20 +13,18 @@ import org.springframework.stereotype.Service;
 public class UserInvitationMailService {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(UserInvitationMailService.class);
-  private static final String DEFAULT_VISIBLE_SYSTEM_NAME = "Sistema de Gestión de Activos";
-
   private final EmailDeliveryService emailDeliveryService;
   private final AuthRecoveryProperties recoveryProperties;
-  private final InstitutionSettingsService institutionSettingsService;
+  private final InstitutionEmailTemplateService institutionEmailTemplateService;
 
   public UserInvitationMailService(
       EmailDeliveryService emailDeliveryService,
       AuthRecoveryProperties recoveryProperties,
-      InstitutionSettingsService institutionSettingsService
+      InstitutionEmailTemplateService institutionEmailTemplateService
   ) {
     this.emailDeliveryService = emailDeliveryService;
     this.recoveryProperties = recoveryProperties;
-    this.institutionSettingsService = institutionSettingsService;
+    this.institutionEmailTemplateService = institutionEmailTemplateService;
   }
 
   public void sendInvitationMail(User user, String rawToken) {
@@ -36,13 +34,17 @@ public class UserInvitationMailService {
 
     try {
       String resetUrl = buildResetUrl(rawToken);
-      String systemName = resolveVisibleSystemName();
+      InstitutionEmailTemplateService.InstitutionalEmail template = institutionEmailTemplateService.invitation(
+          user.getFullName(),
+          resetUrl
+      );
       emailDeliveryService.send(new EmailMessage(
           recoveryProperties.mailFrom(),
           user.getEmail(),
-          "Bienvenido a " + systemName + " - Configura tu contraseña",
-          buildPlainText(user.getFullName(), resetUrl, systemName),
-          buildHtml(user.getFullName(), resetUrl, systemName)
+          "Bienvenido a " + template.systemName() + " - Configura tu contraseña",
+          template.text(),
+          template.html(),
+          template.inlineImages()
       ));
     } catch (RuntimeException exception) {
       LOGGER.error(
@@ -63,40 +65,4 @@ public class UserInvitationMailService {
         + URLEncoder.encode(rawToken, StandardCharsets.UTF_8);
   }
 
-  private String buildPlainText(String fullName, String resetUrl, String systemName) {
-    return """
-        Hola %s,
-
-        Se creó una cuenta para ti en %s. Usa el siguiente enlace para configurar tu contraseña de acceso:
-        %s
-
-        Si no esperabas este correo, contacta al administrador del sistema.
-        """.formatted(fullName, systemName, resetUrl);
-  }
-
-  private String buildHtml(String fullName, String resetUrl, String systemName) {
-    return """
-        <html lang="es">
-          <body style="font-family: Arial, sans-serif; color: #0f172a;">
-            <p>Hola <strong>%s</strong>,</p>
-            <p>Se creó una cuenta para ti en <strong>%s</strong>. Usa el siguiente enlace para configurar tu contraseña de acceso.</p>
-            <p>
-              <a href="%s" style="display: inline-block; padding: 12px 20px; border-radius: 10px; background: #1d4ed8; color: #ffffff; text-decoration: none; font-weight: 600;">
-                Configurar contraseña
-              </a>
-            </p>
-            <p>Si no esperabas este correo, contacta al administrador del sistema.</p>
-          </body>
-        </html>
-        """.formatted(fullName, systemName, resetUrl);
-  }
-
-  private String resolveVisibleSystemName() {
-    String configuredSystemName = institutionSettingsService.getCurrentSettings().getSystemName();
-    if (configuredSystemName == null || configuredSystemName.isBlank()) {
-      return DEFAULT_VISIBLE_SYSTEM_NAME;
-    }
-
-    return configuredSystemName.trim();
-  }
 }

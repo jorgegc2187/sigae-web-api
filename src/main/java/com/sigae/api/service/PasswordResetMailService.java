@@ -10,20 +10,18 @@ import org.springframework.stereotype.Service;
 @Service
 public class PasswordResetMailService {
 
-  private static final String DEFAULT_VISIBLE_SYSTEM_NAME = "Sistema de Gestión de Activos";
-
   private final EmailDeliveryService emailDeliveryService;
   private final AuthRecoveryProperties recoveryProperties;
-  private final InstitutionSettingsService institutionSettingsService;
+  private final InstitutionEmailTemplateService institutionEmailTemplateService;
 
   public PasswordResetMailService(
       EmailDeliveryService emailDeliveryService,
       AuthRecoveryProperties recoveryProperties,
-      InstitutionSettingsService institutionSettingsService
+      InstitutionEmailTemplateService institutionEmailTemplateService
   ) {
     this.emailDeliveryService = emailDeliveryService;
     this.recoveryProperties = recoveryProperties;
-    this.institutionSettingsService = institutionSettingsService;
+    this.institutionEmailTemplateService = institutionEmailTemplateService;
   }
 
   public void sendPasswordResetMail(User user, String rawToken) {
@@ -33,13 +31,17 @@ public class PasswordResetMailService {
 
     try {
       String resetUrl = buildResetUrl(rawToken);
-      String systemName = resolveVisibleSystemName();
+      InstitutionEmailTemplateService.InstitutionalEmail template = institutionEmailTemplateService.passwordReset(
+          user.getFullName(),
+          resetUrl
+      );
       emailDeliveryService.send(new EmailMessage(
           recoveryProperties.mailFrom(),
           user.getEmail(),
-          "Restablecimiento de contraseña - " + systemName,
-          buildPlainText(resetUrl, systemName),
-          buildHtml(resetUrl, systemName)
+          "Restablecimiento de contraseña - " + template.systemName(),
+          template.text(),
+          template.html(),
+          template.inlineImages()
       ));
     } catch (RuntimeException exception) {
       throw new MailDeliveryException("No se pudo enviar el correo de recuperación.", exception);
@@ -52,39 +54,4 @@ public class PasswordResetMailService {
         + URLEncoder.encode(rawToken, StandardCharsets.UTF_8);
   }
 
-  private String buildPlainText(String resetUrl, String systemName) {
-    return """
-        Recibimos una solicitud para restablecer tu contraseña de %s.
-
-        Usa el siguiente enlace para continuar:
-        %s
-
-        Si no solicitaste este cambio, puedes ignorar este mensaje.
-        """.formatted(systemName, resetUrl);
-  }
-
-  private String buildHtml(String resetUrl, String systemName) {
-    return """
-        <html lang="es">
-          <body style="font-family: Arial, sans-serif; color: #0f172a;">
-            <p>Recibimos una solicitud para restablecer tu contraseña de <strong>%s</strong>.</p>
-            <p>
-              <a href="%s" style="display: inline-block; padding: 12px 20px; border-radius: 10px; background: #1d4ed8; color: #ffffff; text-decoration: none; font-weight: 600;">
-                Restablecer contraseña
-              </a>
-            </p>
-            <p>Si no solicitaste este cambio, puedes ignorar este mensaje.</p>
-          </body>
-        </html>
-        """.formatted(systemName, resetUrl);
-  }
-
-  private String resolveVisibleSystemName() {
-    String configuredSystemName = institutionSettingsService.getCurrentSettings().getSystemName();
-    if (configuredSystemName == null || configuredSystemName.isBlank()) {
-      return DEFAULT_VISIBLE_SYSTEM_NAME;
-    }
-
-    return configuredSystemName.trim();
-  }
 }
