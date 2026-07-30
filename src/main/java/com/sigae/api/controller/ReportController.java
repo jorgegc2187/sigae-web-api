@@ -2,6 +2,7 @@ package com.sigae.api.controller;
 
 import com.sigae.api.model.dto.AssetReportRowResponse;
 import com.sigae.api.model.dto.LoanReportRowResponse;
+import com.sigae.api.model.dto.PhysicalInventoryReportResponse;
 import com.sigae.api.model.dto.ReportExportFile;
 import com.sigae.api.model.dto.ReportExportFormat;
 import com.sigae.api.security.AuthenticatedUser;
@@ -38,6 +39,17 @@ public class ReportController {
       @RequestParam(required = false) LocalDate endDate
   ) {
     return reportService.listAssetRows(categoryId, locationId, startDate, endDate);
+  }
+
+  @GetMapping("/assets/physical-inventory")
+  public PhysicalInventoryReportResponse physicalInventory(
+      @RequestParam(required = false) UUID categoryId,
+      @RequestParam(required = false) UUID locationId,
+      @RequestParam(required = false) LocalDate startDate,
+      @RequestParam(required = false) LocalDate endDate,
+      @AuthenticationPrincipal AuthenticatedUser authenticatedUser
+  ) {
+    return reportService.physicalInventory(categoryId, locationId, startDate, endDate, authenticatedUser);
   }
 
   @GetMapping("/assets/export")

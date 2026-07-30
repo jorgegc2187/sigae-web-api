@@ -32,7 +32,7 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
     String accessToken = createAdminAndLogin();
     AssetCatalog catalog = createAssetCatalog(accessToken);
     UUID locationId = createReportLocation(accessToken);
-    createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-001", "2026-01-15");
+    createAsset(accessToken, catalog.assetTypeId(), catalog.attributeDefinitionId(), locationId, "CMP-2026-001", "2026-01-15");
 
     mockMvc.perform(get("/api/reports/assets")
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
@@ -51,7 +51,7 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
     String accessToken = createAdminAndLogin();
     AssetCatalog catalog = createAssetCatalog(accessToken);
     UUID locationId = createReportLocation(accessToken);
-    createAsset(accessToken, catalog.assetTypeId(), locationId, "CMP-2026-010", "2026-05-24");
+    createAsset(accessToken, catalog.assetTypeId(), catalog.attributeDefinitionId(), locationId, "CMP-2026-010", "2026-05-24");
 
     mockMvc.perform(get("/api/reports/assets")
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
@@ -78,7 +78,7 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
     String adminToken = createAdminAndLogin();
     AssetCatalog catalog = createAssetCatalog(adminToken);
     UUID locationId = createReportLocation(adminToken);
-    createAsset(adminToken, catalog.assetTypeId(), locationId, "CMP-2026-002", "2026-02-15");
+    createAsset(adminToken, catalog.assetTypeId(), catalog.attributeDefinitionId(), locationId, "CMP-2026-002", "2026-02-15");
 
     createUser("Ana Lectura", "lectura@sigae.edu.pe", "lectura123", UserRole.SOLO_LECTURA, UserStatus.ACTIVE);
     String accessToken = loginAndGetAccessToken("lectura@sigae.edu.pe", "lectura123");
@@ -89,15 +89,32 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
   }
 
   @Test
-  void assetExportsSeparateDecommissionedAssetsAndShowOnlyGeneratorName() throws Exception {
+  void physicalInventoryReportIncludesAllAssetsAndHistoricalColumns() throws Exception {
     String adminToken = createAdminAndLogin();
     AssetCatalog catalog = createAssetCatalog(adminToken);
     UUID locationId = createReportLocation(adminToken);
 
-    createAsset(adminToken, catalog.assetTypeId(), locationId, "CMP-2026-100", "2026-02-15");
-    UUID decommissionedAssetId = createAsset(adminToken, catalog.assetTypeId(), locationId, "CMP-2026-101", "2026-02-16", "Bueno");
-    createAsset(adminToken, catalog.assetTypeId(), locationId, "CMP-2026-102", "2026-02-17", "Dado de baja");
-    updateAssetCondition(adminToken, decommissionedAssetId, catalog.assetTypeId(), locationId, "CMP-2026-101", "Dado de baja");
+    createAsset(adminToken, catalog.assetTypeId(), catalog.attributeDefinitionId(), locationId, "CMP-2026-100", "2026-02-15");
+    UUID decommissionedAssetId = createAsset(adminToken, catalog.assetTypeId(), catalog.attributeDefinitionId(), locationId, "CMP-2026-101", "2026-02-16", "Bueno");
+    createAsset(adminToken, catalog.assetTypeId(), catalog.attributeDefinitionId(), locationId, "CMP-2026-102", "2026-02-17", "Dado de baja");
+    updateAssetCondition(adminToken, decommissionedAssetId, catalog.assetTypeId(), catalog.attributeDefinitionId(), locationId, "CMP-2026-101", "Dado de baja");
+
+    mockMvc.perform(get("/api/reports/assets/physical-inventory")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+            .param("locationId", locationId.toString()))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.title").value("INVENTARIO FÍSICO DE BIENES PATRIMONIALES"))
+        .andExpect(jsonPath("$.locationSubtitle").value("LABORATORIO DE CÓMPUTO"))
+        .andExpect(jsonPath("$.generatedBy").value("Carlos Mendoza"))
+        .andExpect(jsonPath("$.rows.length()").value(3))
+        .andExpect(jsonPath("$.rows[0].assetDescription").value("Laptop Lenovo ThinkPad — Modelo T14, serie LNV-T14-001"))
+        .andExpect(jsonPath("$.rows[0].brand").value("Lenovo"))
+        .andExpect(jsonPath("$.rows[0].good").value(true))
+        .andExpect(jsonPath("$.rows[0].quantity").value(1))
+        .andExpect(jsonPath("$.rows[1].good").value(false))
+        .andExpect(jsonPath("$.rows[1].regular").value(false))
+        .andExpect(jsonPath("$.rows[1].bad").value(false))
+        .andExpect(jsonPath("$.rows[1].observations").value(containsString("Dado de baja")));
 
     byte[] wordContent = exportReport(adminToken, "word");
     try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(wordContent))) {
@@ -105,19 +122,27 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
       org.junit.jupiter.api.Assertions.assertTrue(text.contains("Carlos Mendoza"));
       org.junit.jupiter.api.Assertions.assertFalse(text.contains("Administrador"));
       org.junit.jupiter.api.Assertions.assertFalse(text.contains("admin@sigae.edu.pe"));
-      org.junit.jupiter.api.Assertions.assertTrue(text.contains("Activos dados de baja"));
-      org.junit.jupiter.api.Assertions.assertTrue(text.contains("CMP-2026-101"));
-      org.junit.jupiter.api.Assertions.assertTrue(text.contains("CMP-2026-102"));
+      org.junit.jupiter.api.Assertions.assertTrue(text.contains("INVENTARIO FÍSICO DE BIENES PATRIMONIALES"));
+      org.junit.jupiter.api.Assertions.assertTrue(text.contains("ESTADO"));
+      org.junit.jupiter.api.Assertions.assertTrue(text.contains("Dado de baja"));
+      org.junit.jupiter.api.Assertions.assertFalse(text.contains("CMP-2026-101"));
+      org.junit.jupiter.api.Assertions.assertFalse(text.contains("CMP-2026-102"));
     }
 
     byte[] excelContent = exportReport(adminToken, "excel");
     try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(excelContent))) {
       Sheet sheet = workbook.getSheetAt(0);
       List<String> values = extractSheetValues(sheet);
-      org.junit.jupiter.api.Assertions.assertTrue(values.contains("Activos dados de baja"));
-      org.junit.jupiter.api.Assertions.assertTrue(values.contains("Fecha baja"));
-      org.junit.jupiter.api.Assertions.assertTrue(values.contains("CMP-2026-101"));
-      org.junit.jupiter.api.Assertions.assertTrue(values.contains("CMP-2026-102"));
+      org.junit.jupiter.api.Assertions.assertTrue(values.contains("INVENTARIO FÍSICO DE BIENES PATRIMONIALES"));
+      org.junit.jupiter.api.Assertions.assertTrue(values.contains("ESTADO"));
+      org.junit.jupiter.api.Assertions.assertTrue(values.contains("B"));
+      org.junit.jupiter.api.Assertions.assertTrue(values.contains("R"));
+      org.junit.jupiter.api.Assertions.assertTrue(values.contains("M"));
+      org.junit.jupiter.api.Assertions.assertTrue(values.contains("CANTIDAD"));
+      org.junit.jupiter.api.Assertions.assertTrue(values.contains("Estado del sistema: Dado de baja | Registro para reporte"));
+      org.junit.jupiter.api.Assertions.assertFalse(values.contains("CMP-2026-101"));
+      org.junit.jupiter.api.Assertions.assertTrue(sheet.getMergedRegions().stream()
+          .anyMatch(range -> range.getFirstColumn() == 3 && range.getLastColumn() == 5));
     }
   }
 
@@ -213,22 +238,29 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
         .getResponse()
         .getContentAsString();
 
-    return new AssetCatalog(categoryId, UUID.fromString(objectMapper.readTree(typeResponse).get("id").asText()));
+    var assetType = objectMapper.readTree(typeResponse);
+    return new AssetCatalog(
+        categoryId,
+        UUID.fromString(assetType.get("id").asText()),
+        UUID.fromString(assetType.get("attributes").get(0).get("id").asText())
+    );
   }
 
   private UUID createAsset(
       String accessToken,
       UUID assetTypeId,
+      UUID attributeDefinitionId,
       UUID locationId,
       String code,
       String acquisitionDate
   ) throws Exception {
-    return createAsset(accessToken, assetTypeId, locationId, code, acquisitionDate, "Bueno");
+    return createAsset(accessToken, assetTypeId, attributeDefinitionId, locationId, code, acquisitionDate, "Bueno");
   }
 
   private UUID createAsset(
       String accessToken,
       UUID assetTypeId,
+      UUID attributeDefinitionId,
       UUID locationId,
       String code,
       String acquisitionDate,
@@ -244,11 +276,17 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
                   "condition": "%s",
                   "serialNumber": "LNV-T14-001",
                   "acquisitionDate": "%s",
+                  "description": "Modelo T14, serie LNV-T14-001",
                   "notes": "Registro para reporte",
-                  "attributeValues": [],
+                  "attributeValues": [
+                    {
+                      "attributeDefinitionId": "%s",
+                      "value": "Lenovo"
+                    }
+                  ],
                   "removedAttachmentIds": []
                 }
-                """.formatted(code, assetTypeId, locationId, condition, acquisitionDate)))
+                """.formatted(code, assetTypeId, locationId, condition, acquisitionDate, attributeDefinitionId)))
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
         .andExpect(status().isCreated())
         .andReturn()
@@ -271,6 +309,7 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
       String accessToken,
       UUID assetId,
       UUID assetTypeId,
+      UUID attributeDefinitionId,
       UUID locationId,
       String code,
       String condition
@@ -285,11 +324,17 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
                   "condition": "%s",
                   "serialNumber": "LNV-T14-001",
                   "acquisitionDate": "2026-02-16",
+                  "description": "Modelo T14, serie LNV-T14-001",
                   "notes": "Registro para reporte",
-                  "attributeValues": [],
+                  "attributeValues": [
+                    {
+                      "attributeDefinitionId": "%s",
+                      "value": "Lenovo"
+                    }
+                  ],
                   "removedAttachmentIds": []
                 }
-                """.formatted(code, assetTypeId, locationId, condition)))
+                """.formatted(code, assetTypeId, locationId, condition, attributeDefinitionId)))
             .with(request -> {
               request.setMethod("PATCH");
               return request;
@@ -311,5 +356,5 @@ class ReportControllerIntegrationTest extends IntegrationTestSupport {
     return values;
   }
 
-  private record AssetCatalog(UUID categoryId, UUID assetTypeId) {}
+  private record AssetCatalog(UUID categoryId, UUID assetTypeId, UUID attributeDefinitionId) {}
 }

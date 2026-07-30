@@ -15,6 +15,8 @@ import com.lowagie.text.pdf.PdfWriter;
 import com.sigae.api.exception.BadRequestException;
 import com.sigae.api.model.dto.AssetReportRowResponse;
 import com.sigae.api.model.dto.LoanReportRowResponse;
+import com.sigae.api.model.dto.PhysicalInventoryReportResponse;
+import com.sigae.api.model.dto.PhysicalInventoryReportRowResponse;
 import com.sigae.api.model.dto.ReportExportFile;
 import com.sigae.api.model.dto.ReportExportFormat;
 import com.sigae.api.model.entity.Asset;
@@ -32,6 +34,7 @@ import java.awt.Color;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -42,10 +45,13 @@ import java.util.UUID;
 import java.util.stream.Stream;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.HorizontalAlignment;
 import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.VerticalAlignment;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
@@ -54,6 +60,9 @@ import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.apache.poi.xwpf.usermodel.XWPFRun;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageSz;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -140,12 +149,17 @@ public class ReportService {
       ReportExportFormat format,
       AuthenticatedUser authenticatedUser
   ) {
-    List<AssetReportRowResponse> rows = listAssetRows(categoryId, locationId, startDate, endDate);
-    ReportDocumentContext context = buildAssetContext(categoryId, locationId, startDate, endDate, authenticatedUser);
+    PhysicalInventoryReportResponse report = physicalInventory(
+        categoryId,
+        locationId,
+        startDate,
+        endDate,
+        authenticatedUser
+    );
     byte[] content = switch (format) {
-      case PDF -> buildAssetsPdf(rows, context);
-      case EXCEL -> buildAssetsExcel(rows, context);
-      case WORD -> buildAssetsWord(rows, context);
+      case PDF -> buildPhysicalInventoryPdf(report);
+      case EXCEL -> buildPhysicalInventoryExcel(report);
+      case WORD -> buildPhysicalInventoryWord(report);
     };
 
     return new ReportExportFile(
@@ -153,6 +167,92 @@ public class ReportService {
         format.contentType(),
         content
     );
+  }
+
+  public PhysicalInventoryReportResponse physicalInventory(
+      UUID categoryId,
+      UUID locationId,
+      LocalDate startDate,
+      LocalDate endDate,
+      AuthenticatedUser authenticatedUser
+  ) {
+    ensureValidDateRange(startDate, endDate);
+    InstitutionSettings settings = institutionSettingsService.getCurrentSettings();
+    String locationName = locationId == null
+        ? null
+        : locationRepository.findById(locationId).map(location -> location.getName()).orElse(null);
+    return new PhysicalInventoryReportResponse(
+        buildUgelName(settings.getCity()),
+        normalizeText(settings.getSystemName(), "Institución educativa"),
+        "INVENTARIO FÍSICO DE BIENES PATRIMONIALES",
+        buildLocationSubtitle(locationName),
+        resolveGeneratedBy(authenticatedUser).name(),
+        LocalDate.now(),
+        findAssets(categoryId, locationId, startDate, endDate).stream()
+            .map(this::toPhysicalInventoryRow)
+            .toList()
+    );
+  }
+
+  private PhysicalInventoryReportRowResponse toPhysicalInventoryRow(Asset asset) {
+    String technicalDescription = normalizeText(asset.getDescription(), "");
+    String assetName = normalizeText(asset.getName(), "");
+    String assetDescription = technicalDescription.isBlank() || technicalDescription.equalsIgnoreCase(assetName)
+        ? assetName
+        : assetName + " — " + technicalDescription;
+    String brand = asset.getAttributeValues().stream()
+        .filter(value -> "marca".equalsIgnoreCase(value.getAttributeDefinition().getName()))
+        .map(value -> normalizeText(value.getValue(), ""))
+        .filter(value -> !value.isBlank())
+        .findFirst()
+        .orElse("");
+    String observations = joinObservations(conditionSupplement(asset.getCondition()), asset.getNotes());
+    return new PhysicalInventoryReportRowResponse(
+        asset.getId(),
+        asset.getCode(),
+        assetDescription,
+        asset.getLocation().getName(),
+        asset.getCondition() == AssetCondition.BUENO,
+        asset.getCondition() == AssetCondition.REGULAR,
+        asset.getCondition() == AssetCondition.MALO,
+        brand,
+        observations,
+        1
+    );
+  }
+
+  private String buildUgelName(String city) {
+    String normalizedCity = normalizeText(city, "");
+    return normalizedCity.isBlank()
+        ? null
+        : "UNIDAD DE GESTIÓN EDUCATIVA LOCAL DE " + normalizedCity.toUpperCase(Locale.ROOT);
+  }
+
+  private String buildLocationSubtitle(String locationName) {
+    String normalizedLocation = normalizeText(locationName, "");
+    if (normalizedLocation.isBlank()) {
+      return null;
+    }
+    return "AIP".equalsIgnoreCase(normalizedLocation)
+        ? "AULA DE INNOVACIÓN PEDAGÓGICA"
+        : normalizedLocation.toUpperCase(Locale.ROOT);
+  }
+
+  private String conditionSupplement(AssetCondition condition) {
+    return switch (condition) {
+      case MANTENIMIENTO -> "Estado del sistema: Mantenimiento";
+      case DADO_DE_BAJA -> "Estado del sistema: Dado de baja";
+      default -> "";
+    };
+  }
+
+  private String joinObservations(String prefix, String observations) {
+    String normalizedPrefix = normalizeText(prefix, "");
+    String normalizedObservations = normalizeText(observations, "");
+    if (normalizedPrefix.isBlank()) {
+      return normalizedObservations;
+    }
+    return normalizedObservations.isBlank() ? normalizedPrefix : normalizedPrefix + " | " + normalizedObservations;
   }
 
   public List<LoanReportRowResponse> listLoanRows(
@@ -332,6 +432,83 @@ public class ReportService {
     } catch (Exception exception) {
       throw new IllegalStateException("No se pudo generar el reporte PDF.", exception);
     }
+  }
+
+  private byte[] buildPhysicalInventoryPdf(PhysicalInventoryReportResponse report) {
+    try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      Document document = new Document(PageSize.A4.rotate(), 22, 22, 24, 24);
+      PdfWriter.getInstance(document, output);
+      document.open();
+      addPhysicalPdfHeading(document, report);
+      PdfPTable table = new PdfPTable(new float[] {0.45f, 3.3f, 1.0f, 0.35f, 0.35f, 0.35f, 0.85f, 1.45f, 0.5f});
+      table.setWidthPercentage(100);
+      addPhysicalPdfHeader(table);
+      for (int index = 0; index < report.rows().size(); index++) {
+        addPhysicalPdfRow(table, index + 1, report.rows().get(index));
+      }
+      addEmptyPdfRowIfNeeded(table, 9, report.rows().isEmpty());
+      document.add(table);
+      document.close();
+      return output.toByteArray();
+    } catch (Exception exception) {
+      throw new IllegalStateException("No se pudo generar el inventario físico en PDF.", exception);
+    }
+  }
+
+  private void addPhysicalPdfHeading(Document document, PhysicalInventoryReportResponse report) throws DocumentException {
+    Font institutionFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10);
+    Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12);
+    Font metadataFont = FontFactory.getFont(FontFactory.HELVETICA, 8);
+    addCenteredPdfLine(document, report.ugelName(), institutionFont);
+    addCenteredPdfLine(document, report.institutionName().toUpperCase(Locale.ROOT), institutionFont);
+    addCenteredPdfLine(document, report.title(), titleFont);
+    addCenteredPdfLine(document, report.locationSubtitle(), institutionFont);
+    addCenteredPdfLine(document, "Generado por: " + report.generatedBy() + "  |  Fecha: " + formatDate(report.generatedAt()), metadataFont);
+  }
+
+  private void addCenteredPdfLine(Document document, String value, Font font) throws DocumentException {
+    if (value == null || value.isBlank()) {
+      return;
+    }
+    Paragraph line = new Paragraph(value, font);
+    line.setAlignment(Element.ALIGN_CENTER);
+    line.setSpacingAfter(3);
+    document.add(line);
+  }
+
+  private void addPhysicalPdfHeader(PdfPTable table) {
+    Font font = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 7);
+    addPhysicalPdfHeaderCell(table, "ITEM", font, 1, 2);
+    addPhysicalPdfHeaderCell(table, "DESCRIPCIÓN DEL BIEN", font, 1, 2);
+    addPhysicalPdfHeaderCell(table, "UBICACIÓN", font, 1, 2);
+    addPhysicalPdfHeaderCell(table, "ESTADO", font, 3, 1);
+    addPhysicalPdfHeaderCell(table, "MARCA", font, 1, 2);
+    addPhysicalPdfHeaderCell(table, "OBSERVACIONES", font, 1, 2);
+    addPhysicalPdfHeaderCell(table, "CANTIDAD", font, 1, 2);
+    addPhysicalPdfHeaderCell(table, "B", font, 1, 1);
+    addPhysicalPdfHeaderCell(table, "R", font, 1, 1);
+    addPhysicalPdfHeaderCell(table, "M", font, 1, 1);
+  }
+
+  private void addPhysicalPdfHeaderCell(PdfPTable table, String value, Font font, int colspan, int rowspan) {
+    PdfPCell cell = pdfCell(value, font, Element.ALIGN_CENTER);
+    cell.setColspan(colspan);
+    cell.setRowspan(rowspan);
+    cell.setPadding(4);
+    table.addCell(cell);
+  }
+
+  private void addPhysicalPdfRow(PdfPTable table, int index, PhysicalInventoryReportRowResponse row) {
+    Font font = FontFactory.getFont(FontFactory.HELVETICA, 7);
+    table.addCell(pdfCell(String.valueOf(index), font, Element.ALIGN_CENTER));
+    table.addCell(pdfCell(row.assetDescription(), font, Element.ALIGN_LEFT));
+    table.addCell(pdfCell(row.location(), font, Element.ALIGN_CENTER));
+    table.addCell(pdfCell(row.good() ? "X" : "", font, Element.ALIGN_CENTER));
+    table.addCell(pdfCell(row.regular() ? "X" : "", font, Element.ALIGN_CENTER));
+    table.addCell(pdfCell(row.bad() ? "X" : "", font, Element.ALIGN_CENTER));
+    table.addCell(pdfCell(row.brand(), font, Element.ALIGN_CENTER));
+    table.addCell(pdfCell(row.observations(), font, Element.ALIGN_LEFT));
+    table.addCell(pdfCell(String.valueOf(row.quantity()), font, Element.ALIGN_CENTER));
   }
 
   private byte[] buildLoansPdf(List<LoanReportRowResponse> rows, ReportDocumentContext context) {
@@ -564,6 +741,113 @@ public class ReportService {
     }
   }
 
+  private byte[] buildPhysicalInventoryExcel(PhysicalInventoryReportResponse report) {
+    try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      var sheet = workbook.createSheet("Inventario físico");
+      CellStyle centered = physicalExcelStyle(workbook, true, true);
+      CellStyle left = physicalExcelStyle(workbook, false, true);
+      int rowIndex = 0;
+      rowIndex = writePhysicalExcelTitle(sheet, rowIndex, report, workbook);
+      Row header = sheet.createRow(rowIndex);
+      Row subheader = sheet.createRow(rowIndex + 1);
+      writePhysicalExcelHeader(sheet, header, subheader, centered);
+      rowIndex += 2;
+      for (int index = 0; index < report.rows().size(); index++) {
+        PhysicalInventoryReportRowResponse reportRow = report.rows().get(index);
+        Row row = sheet.createRow(rowIndex++);
+        row.createCell(0).setCellValue(index + 1);
+        row.createCell(1).setCellValue(reportRow.assetDescription());
+        row.createCell(2).setCellValue(reportRow.location());
+        row.createCell(3).setCellValue(reportRow.good() ? "X" : "");
+        row.createCell(4).setCellValue(reportRow.regular() ? "X" : "");
+        row.createCell(5).setCellValue(reportRow.bad() ? "X" : "");
+        row.createCell(6).setCellValue(reportRow.brand());
+        row.createCell(7).setCellValue(reportRow.observations());
+        row.createCell(8).setCellValue(reportRow.quantity());
+        for (int column = 0; column < 9; column++) {
+          row.getCell(column).setCellStyle(column == 1 || column == 7 ? left : centered);
+        }
+      }
+      sheet.setColumnWidth(0, 1500);
+      sheet.setColumnWidth(1, 26000);
+      sheet.setColumnWidth(2, 4200);
+      sheet.setColumnWidth(3, 1200);
+      sheet.setColumnWidth(4, 1200);
+      sheet.setColumnWidth(5, 1200);
+      sheet.setColumnWidth(6, 4600);
+      sheet.setColumnWidth(7, 9000);
+      sheet.setColumnWidth(8, 1700);
+      workbook.write(output);
+      return output.toByteArray();
+    } catch (IOException exception) {
+      throw new IllegalStateException("No se pudo generar el inventario físico en Excel.", exception);
+    }
+  }
+
+  private int writePhysicalExcelTitle(
+      org.apache.poi.ss.usermodel.Sheet sheet,
+      int rowIndex,
+      PhysicalInventoryReportResponse report,
+      XSSFWorkbook workbook
+  ) {
+    CellStyle titleStyle = workbook.createCellStyle();
+    org.apache.poi.ss.usermodel.Font titleFont = workbook.createFont();
+    titleFont.setBold(true);
+    titleFont.setFontHeightInPoints((short) 11);
+    titleStyle.setFont(titleFont);
+    titleStyle.setAlignment(HorizontalAlignment.CENTER);
+    String[] lines = {report.ugelName(), report.institutionName(), report.title(), report.locationSubtitle()};
+    for (String line : lines) {
+      if (line == null || line.isBlank()) {
+        continue;
+      }
+      Row row = sheet.createRow(rowIndex);
+      row.createCell(0).setCellValue(line);
+      row.getCell(0).setCellStyle(titleStyle);
+      sheet.addMergedRegion(new CellRangeAddress(rowIndex, rowIndex, 0, 8));
+      rowIndex++;
+    }
+    Row metadata = sheet.createRow(rowIndex++);
+    metadata.createCell(0).setCellValue("Generado por: " + report.generatedBy());
+    metadata.createCell(5).setCellValue("Fecha: " + formatDate(report.generatedAt()));
+    return rowIndex + 1;
+  }
+
+  private CellStyle physicalExcelStyle(XSSFWorkbook workbook, boolean centered, boolean bordered) {
+    CellStyle style = workbook.createCellStyle();
+    style.setAlignment(centered ? HorizontalAlignment.CENTER : HorizontalAlignment.LEFT);
+    style.setVerticalAlignment(VerticalAlignment.CENTER);
+    style.setWrapText(true);
+    if (bordered) {
+      style.setBorderTop(BorderStyle.THIN);
+      style.setBorderBottom(BorderStyle.THIN);
+      style.setBorderLeft(BorderStyle.THIN);
+      style.setBorderRight(BorderStyle.THIN);
+    }
+    return style;
+  }
+
+  private void writePhysicalExcelHeader(
+      org.apache.poi.ss.usermodel.Sheet sheet,
+      Row header,
+      Row subheader,
+      CellStyle style
+  ) {
+    String[] labels = {"ITEM", "DESCRIPCIÓN DEL BIEN", "UBICACIÓN", "ESTADO", "", "", "MARCA", "OBSERVACIONES", "CANTIDAD"};
+    for (int column = 0; column < labels.length; column++) {
+      header.createCell(column).setCellValue(labels[column]);
+      header.getCell(column).setCellStyle(style);
+      subheader.createCell(column).setCellStyle(style);
+    }
+    subheader.getCell(3).setCellValue("B");
+    subheader.getCell(4).setCellValue("R");
+    subheader.getCell(5).setCellValue("M");
+    for (int column : new int[] {0, 1, 2, 6, 7, 8}) {
+      sheet.addMergedRegion(new CellRangeAddress(header.getRowNum(), subheader.getRowNum(), column, column));
+    }
+    sheet.addMergedRegion(new CellRangeAddress(header.getRowNum(), header.getRowNum(), 3, 5));
+  }
+
   private byte[] buildLoansExcel(List<LoanReportRowResponse> rows, ReportDocumentContext context) {
     try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
       var sheet = workbook.createSheet("Préstamos");
@@ -689,6 +973,60 @@ public class ReportService {
     } catch (IOException | InvalidFormatException exception) {
       throw new IllegalStateException("No se pudo generar el reporte Word.", exception);
     }
+  }
+
+  private byte[] buildPhysicalInventoryWord(PhysicalInventoryReportResponse report) {
+    try (XWPFDocument document = new XWPFDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      setWordLandscape(document);
+      addWordCenteredLine(document, report.ugelName(), true);
+      addWordCenteredLine(document, report.institutionName(), true);
+      addWordCenteredLine(document, report.title(), true);
+      addWordCenteredLine(document, report.locationSubtitle(), true);
+      addWordCenteredLine(document, "Generado por: " + report.generatedBy() + " | Fecha: " + formatDate(report.generatedAt()), false);
+      XWPFTable table = document.createTable(report.rows().size() + 2, 9);
+      String[] header = {"ITEM", "DESCRIPCIÓN DEL BIEN", "UBICACIÓN", "ESTADO", "", "", "MARCA", "OBSERVACIONES", "CANTIDAD"};
+      String[] stateHeader = {"", "", "", "B", "R", "M", "", "", ""};
+      writeWordHeader(table.getRow(0), header);
+      writeWordHeader(table.getRow(1), stateHeader);
+      for (int index = 0; index < report.rows().size(); index++) {
+        PhysicalInventoryReportRowResponse row = report.rows().get(index);
+        XWPFTableRow wordRow = table.getRow(index + 2);
+        wordRow.getCell(0).setText(String.valueOf(index + 1));
+        wordRow.getCell(1).setText(row.assetDescription());
+        wordRow.getCell(2).setText(row.location());
+        wordRow.getCell(3).setText(row.good() ? "X" : "");
+        wordRow.getCell(4).setText(row.regular() ? "X" : "");
+        wordRow.getCell(5).setText(row.bad() ? "X" : "");
+        wordRow.getCell(6).setText(row.brand());
+        wordRow.getCell(7).setText(row.observations());
+        wordRow.getCell(8).setText(String.valueOf(row.quantity()));
+      }
+      document.write(output);
+      return output.toByteArray();
+    } catch (IOException exception) {
+      throw new IllegalStateException("No se pudo generar el inventario físico en Word.", exception);
+    }
+  }
+
+  private void setWordLandscape(XWPFDocument document) {
+    CTSectPr section = document.getDocument().getBody().isSetSectPr()
+        ? document.getDocument().getBody().getSectPr()
+        : document.getDocument().getBody().addNewSectPr();
+    CTPageSz pageSize = section.isSetPgSz() ? section.getPgSz() : section.addNewPgSz();
+    pageSize.setOrient(STPageOrientation.LANDSCAPE);
+    pageSize.setW(BigInteger.valueOf(15840));
+    pageSize.setH(BigInteger.valueOf(12240));
+  }
+
+  private void addWordCenteredLine(XWPFDocument document, String value, boolean bold) {
+    if (value == null || value.isBlank()) {
+      return;
+    }
+    XWPFParagraph paragraph = document.createParagraph();
+    paragraph.setAlignment(ParagraphAlignment.CENTER);
+    XWPFRun run = paragraph.createRun();
+    run.setBold(bold);
+    run.setText(value);
   }
 
   private byte[] buildLoansWord(List<LoanReportRowResponse> rows, ReportDocumentContext context) {
